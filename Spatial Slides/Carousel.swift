@@ -22,74 +22,39 @@ struct CarouselCard: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.white.opacity(0.12))
-
-            thumbnailContent
-                .opacity(0.72)
-                .saturation(0.82)
-                .contrast(0.92)
-
-            LinearGradient(colors: [
-                .white.opacity(0.30),
-                .white.opacity(0.08),
-                .black.opacity(0.24),
-            ], startPoint: .topLeading, endPoint: .bottomTrailing)
-
-            RoundedRectangle(cornerRadius: 14)
-                .fill(.white.opacity(0.08))
-                .blendMode(.screen)
-
+            if let img = thumb {
+                Image(uiImage: img).resizable().scaledToFill()
+            } else {
+                LinearGradient(colors: [Color(hex: "#26324C"), Color(hex: "#3A2340")],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                Text(page.title).font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9)).lineLimit(3).padding(16)
+            }
             Text("\(page.index + 1)")
                 .font(.system(size: 19, weight: .bold, design: .rounded)).monospacedDigit()
                 .foregroundStyle(.white)
                 .padding(.horizontal, 9).padding(.vertical, 4)
-                .background(.white.opacity(0.18), in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(0.28), lineWidth: 1))
-                .shadow(color: .black.opacity(0.35), radius: 7, y: 2)
-                .padding(10)
+                .background(.black.opacity(0.55), in: Capsule()).padding(10)
         }
         .frame(width: Carousel.frameSize.width, height: Carousel.frameSize.height)
-        .background(.black.opacity(0.18), in: .rect(cornerRadius: 14))
+        .background(Color(hex: "#0C1018"), in: .rect(cornerRadius: 14))
         .clipShape(.rect(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(.white.opacity(0.42), lineWidth: 1)
+                .strokeBorder(.white.opacity(0.18), lineWidth: 1)
         )
-        .overlay(alignment: .topLeading) {
-            LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-                .frame(height: 54)
-                .clipShape(.rect(cornerRadius: 14))
-                .allowsHitTesting(false)
-        }
-        .shadow(color: .black.opacity(0.28), radius: 18, y: 10)
-        // NOTE: avoid glassBackgroundEffect here. A ring of live backdrop-blur panels is
-        // costly in an immersive scene, so this is a static frosted-glass treatment.
     }
 
     private var thumb: UIImage? { ThumbnailCache.image(page.thumbnail) }
-
-    @ViewBuilder
-    private var thumbnailContent: some View {
-        if let img = thumb {
-            Image(uiImage: img).resizable().scaledToFill()
-        } else {
-            LinearGradient(colors: [Color(hex: "#26324C"), Color(hex: "#3A2340")],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-            Text(page.title).font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.9)).lineLimit(3).padding(16)
-        }
-    }
 }
 
 /// Decoded thumbnails are cached AND downsampled. `CarouselCard.body` re-evaluates on
-/// every page change (re-reading a 1280×720 PNG from disk each time hitched), and a
-/// card only renders ~420 pt wide — decoding the full 1280×720 wastes ~4× the memory
-/// (44 cards × 3.7 MB ≈ 160 MB → ≈ 40 MB). ImageIO decodes straight to a small size.
+/// every page change, so ImageIO decodes once and the cache serves the ring after that.
+/// Keep the thumbnails near source resolution; the cards are spatially enlarged, and
+/// the old 640 px decode looked soft in the headset.
 enum ThumbnailCache {
     private static let cache = NSCache<NSString, UIImage>()
-    private static let maxPixel = 640   // covers a ~420 pt card with headroom
+    private static let maxPixel = 1256
 
     static func image(_ relativePath: String) -> UIImage? {
         guard !relativePath.isEmpty, let url = DeckLoader.assetURL(relativePath) else { return nil }

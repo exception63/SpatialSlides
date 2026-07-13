@@ -367,8 +367,6 @@ final class StageCoordinator {
     private var dragging = false
     private var indexForCard: [ObjectIdentifier: Int] = [:]
     private var cards: [Entity?] = []
-    private var cardHighlight: Entity?
-    private weak var highlightedCard: Entity?
     private var carouselAnimation: CarouselAnimation?
     /// Pages per drag-point. Higher = faster. Negate to flip drag direction.
     private let dragSensitivity: Float = 0.004
@@ -408,15 +406,12 @@ final class StageCoordinator {
     func buildCarousel(cards: [Entity?], count: Int) {
         carousel?.removeFromParent()
         adjustHandle?.removeFromParent()
-        cardHighlight?.removeFromParent()
-        highlightedCard = nil
         carouselAnimation = nil
         indexForCard.removeAll()
         let container = Entity()                 // holds the cards; a direct child of root
         root.addChild(container)
         carousel = container
         self.cards = cards
-        cardHighlight = makeCardHighlight()
         for (i, card) in cards.enumerated() {
             guard let card else { continue }
             card.components.set(InputTargetComponent())
@@ -451,25 +446,6 @@ final class StageCoordinator {
             bar.addChild(knob)
         }
         return bar
-    }
-
-    private func makeCardHighlight() -> Entity {
-        let frame = Entity()
-        let material = UnlitMaterial(color: UIColor(hex: "#5AC8FA"))
-        let size = Carousel.collisionSize
-        let w = size.x, h = size.y
-        let t: Float = 0.008
-        let z: Float = 0.018
-        func bar(_ sx: Float, _ sy: Float, _ x: Float, _ y: Float) {
-            let b = ModelEntity(mesh: .generateBox(size: [sx, sy, t]), materials: [material])
-            b.position = [x, y, z]
-            frame.addChild(b)
-        }
-        bar(w + t * 2, t, 0, h / 2 + t / 2)
-        bar(w + t * 2, t, 0, -h / 2 - t / 2)
-        bar(t, h + t * 2, -w / 2 - t / 2, 0)
-        bar(t, h + t * 2, w / 2 + t / 2, 0)
-        return frame
     }
 
     /// Adjust mode. On: reveal the handle at the wheel's front and make it grabbable;
@@ -513,7 +489,6 @@ final class StageCoordinator {
     @discardableResult
     func rotateCarousel(toPage page: Int, count: Int, animated: Bool) -> TimeInterval {
         let target = Float(min(max(page, 0), max(count - 1, 0)))
-        updateCurrentCardHighlight(page: Int(target))
         guard animated else {
             carouselAnimation = nil
             carouselOffset = target
@@ -569,20 +544,6 @@ final class StageCoordinator {
         } else {
             carouselAnimation = animation
         }
-    }
-
-    private func updateCurrentCardHighlight(page: Int) {
-        guard let highlight = cardHighlight,
-              cards.indices.contains(page),
-              let card = cards[page] else {
-            cardHighlight?.removeFromParent()
-            highlightedCard = nil
-            return
-        }
-        guard highlightedCard !== card else { return }
-        highlight.removeFromParent()
-        card.addChild(highlight)
-        highlightedCard = card
     }
 
     /// Positions every card by its fractional distance from the front slot.
