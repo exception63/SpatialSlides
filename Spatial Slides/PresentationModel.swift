@@ -133,6 +133,7 @@ final class PresentationModel {
     func replace(with show: Show) {
         self.show = show
         currentPage = 0
+        currentBeat = 0
         version += 1
         isEditing = false
         selectedElementID = nil
@@ -162,17 +163,37 @@ final class PresentationModel {
     var canGoPrevious: Bool { currentPage > 0 }
     var canGoNext: Bool { currentPage < pageCount - 1 }
 
-    func next() { if canGoNext { currentPage += 1 } }
-    func previous() { if canGoPrevious { currentPage -= 1 } }
+    func next() { if canGoNext { currentPage += 1; currentBeat = 0 } }         // forward → page starts at its base beat
+    func previous() { if canGoPrevious { currentPage -= 1; currentBeat = currentMaxBeat } }  // back → prior page fully built
     func go(to page: Int) { setPage(page) }
 
-    /// Snaps to a page (used by the carousel on release, and by jumps).
+    /// Snaps to a page (used by the carousel on release, and by jumps). A jump arrives
+    /// at the page's base state (beat 0), then the presenter builds it up.
     func setPage(_ page: Int) {
         guard hasContent else { return }
         currentPage = min(max(page, 0), pageCount - 1)
+        currentBeat = 0
     }
 
     var counterText: String { hasContent ? "\(clampedPage + 1) / \(pageCount)" : "—" }
+
+    // MARK: Attention timeline (#4) — per-page beats
+
+    /// How many attention beats of THIS page are revealed. 0 = only the base accents
+    /// (no beat / beat 0); each advance reveals the next beat's accents in authored
+    /// (cognitive) order. Reset whenever the page changes.
+    private(set) var currentBeat = 0
+    /// The highest beat authored on this page (0 = no stepped beats → nothing to build).
+    var currentMaxBeat: Int { currentElements.compactMap { $0.animation?.buildIn?.order }.max() ?? 0 }
+    /// While true, the presenter's forward action reveals the next beat rather than
+    /// turning the page (Keynote-style builds).
+    var beatsRemaining: Bool { currentBeat < currentMaxBeat }
+    /// "2/4" while a page is building; empty when it has no stepped beats.
+    var beatLabel: String { currentMaxBeat > 0 ? "\(currentBeat)/\(currentMaxBeat)" : "" }
+
+    /// Presenter's forward action: reveal the next beat, else advance the page.
+    func advance() { if beatsRemaining { currentBeat += 1 } else { next() } }
+    func revealNextBeat() { if beatsRemaining { currentBeat += 1 } }
 
     // MARK: Editing near elements
 

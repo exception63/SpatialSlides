@@ -80,6 +80,9 @@ struct StageView: View {
             pendingPageCommit = nil
             presentation.syncSliderToPageModel()
         }
+        .onChange(of: presentation.currentBeat) { _, beat in
+            coordinator.revealBeat(beat)   // #4: presenter advanced the attention timeline
+        }
         .onChange(of: presentation.deckScaleNonce) { _, _ in coordinator.scaleDeckPanel(presentation.deckScaleFactor) }
         .onChange(of: presentation.transcriptBoardNonce) { _, _ in
             coordinator.adjustTranscriptBoard(scale: presentation.transcriptBoardScaleFactor, yaw: presentation.transcriptBoardYaw)
@@ -128,7 +131,10 @@ struct StageView: View {
                 } else if coordinator.selectModelIfTarget(value.entity) {
                     // tapped a 3D model in play mode → now the active model for ± resize
                 } else if !coordinator.playEmphasisIfTarget(value.entity) {
-                    navigateViaCarousel(to: presentation.currentPage + 1)
+                    // #4: a tap first builds the current page's remaining attention beats,
+                    // then (page fully built) turns to the next page.
+                    if presentation.beatsRemaining { presentation.revealNextBeat() }
+                    else { navigateViaCarousel(to: presentation.currentPage + 1) }
                 }
             }
     }
@@ -227,7 +233,11 @@ struct StageView: View {
 
         coordinator.clearNear()
         let container = Entity()
-        for (rank, element) in elements.enumerated() {
+        // #4 attention timeline: elements carry a beat (buildIn.order). Those at or below
+        // the page's currentBeat are shown now; later beats start hidden and are revealed
+        // one presenter-advance at a time. A small stagger orders same-beat reveals.
+        var revealIdx = 0
+        for element in elements {
             let node: Entity
             if element.usesAttachment {
                 guard let e = attachments.entity(for: element.id) else { continue }
@@ -242,10 +252,17 @@ struct StageView: View {
             node.orientation = t.rotationEuler == .zero ? Self.facing(t.position) : t.orientation
             node.scale = [t.scale, t.scale, t.scale]
             container.addChild(node)
-            coordinator.buildIn(node, element: element, rank: rank)
             coordinator.registerTappable(node, element: element)
             if !element.usesAttachment, let loop = element.animation?.loop {
-                coordinator.registerLooper(node, loop: loop, startDelay: Double(rank) * 0.06 + 0.45)
+                coordinator.registerLooper(node, loop: loop, startDelay: 0.45)
+            }
+            let beat = element.animation?.buildIn?.order ?? 0
+            if beat <= presentation.currentBeat {
+                coordinator.buildIn(node, delay: Double(revealIdx) * 0.06)
+                revealIdx += 1
+            } else {
+                node.isEnabled = false                    // future beat — hidden until its cue
+                coordinator.registerBeatNode(node, beat: beat)
             }
         }
         coordinator.root.addChild(container)
@@ -956,6 +973,7 @@ final class StageCoordinator {
         guard !loopers.isEmpty else { return }
         for i in loopers.indices {
             guard let node = loopers[i].node else { continue }
+            if !node.isEnabled { continue }                                      // #4: parked (future-beat) → no loop yet
             loopers[i].elapsed += dt
             if loopers[i].elapsed < loopers[i].startDelay { continue }
             if manipulatingNodes.contains(ObjectIdentifier(node)) { continue }   // held → hold phase
@@ -1015,18 +1033,33 @@ final class StageCoordinator {
         selectionOutline = nil
         loopers.removeAll()
         manipulatingNodes.removeAll()
+        beatNodes.removeAll()
     }
 
-    func buildIn(_ node: Entity, element: ExhibitElement, rank: Int) {
+    func buildIn(_ node: Entity, delay: Double = 0) {
         let final = node.transform
         var start = final
         start.scale = final.scale * 0.85
         start.translation = final.translation + [0, -0.04, -0.12]
         node.transform = start
-        let delay = Double(rank) * 0.06
         Task { @MainActor in
             if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
             node.move(to: final, relativeTo: node.parent, duration: 0.4, timingFunction: .easeOut)
+        }
+    }
+
+    // #4 attention timeline: near accents whose beat is above the page's current level,
+    // parked hidden until the presenter advances to their cue.
+    private var beatNodes: [Int: [Entity]] = [:]
+    func registerBeatNode(_ node: Entity, beat: Int) { beatNodes[beat, default: []].append(node) }
+
+    /// Reveal a beat's parked accents with the entrance animation — called when the
+    /// presenter advances the timeline (PresentationModel.currentBeat changed).
+    func revealBeat(_ beat: Int) {
+        guard let nodes = beatNodes[beat] else { return }
+        for (i, node) in nodes.enumerated() {
+            node.isEnabled = true
+            buildIn(node, delay: Double(i) * 0.06)
         }
     }
 

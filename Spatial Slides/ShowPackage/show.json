@@ -104,6 +104,9 @@
               "effect": "float",
               "period": 3.5,
               "amplitude": 1.5
+            },
+            "buildIn": {
+              "order": 2
             }
           }
         }
@@ -145,6 +148,9 @@
             "loop": {
               "effect": "float",
               "period": 4
+            },
+            "buildIn": {
+              "order": 1
             }
           }
         }

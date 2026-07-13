@@ -113,9 +113,13 @@ struct ContentView: View {
             Button { withAnimation(.snappy) { presentation.previous() } } label: {
                 Label("上一页", systemImage: "chevron.left").frame(maxWidth: .infinity)
             }.disabled(!presentation.canGoPrevious)
-            Button { withAnimation(.snappy) { presentation.next() } } label: {
-                Label("下一页", systemImage: "chevron.right").frame(maxWidth: .infinity)
-            }.disabled(!presentation.canGoNext)
+            // #4: forward builds the page's remaining attention beats, then turns the page.
+            Button { withAnimation(.snappy) { presentation.advance() } } label: {
+                Label(presentation.beatsRemaining ? "下一拍 \(presentation.beatLabel)" : "下一页",
+                      systemImage: presentation.beatsRemaining ? "arrow.forward.circle.fill" : "chevron.right")
+                    .frame(maxWidth: .infinity)
+            }.disabled(!presentation.canGoNext && !presentation.beatsRemaining)
+                .tint(presentation.beatsRemaining ? .orange : nil)
         }
         .controlSize(.extraLarge).buttonStyle(.borderedProminent)
     }
