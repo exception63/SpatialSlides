@@ -107,6 +107,7 @@ struct ExhibitElementView: View {
 struct NeonGlow: ViewModifier {
     var corner: CGFloat = 30
     @State private var breathe = false
+    @State private var lit: CGFloat = 0     // 0→1 ignition sweep on appear (a neon tube "lighting up")
 
     private let cyan = Color(hex: "#00E5FF")
     private let magenta = Color(hex: "#FF2D9B")
@@ -117,17 +118,23 @@ struct NeonGlow: ViewModifier {
             .background(Color(hex: "#0B0E16").opacity(0.85), in: .rect(cornerRadius: corner))
             .overlay(   // wider, dim ring = a fake "glow" halo without a real blur pass
                 RoundedRectangle(cornerRadius: corner + 3)
-                    .strokeBorder(grad, lineWidth: 7)
+                    .trim(from: 0, to: lit)
+                    .stroke(grad, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                     .opacity(breathe ? 0.5 : 0.18)
             )
-            .overlay(   // crisp bright ring on top
+            .overlay(   // crisp bright ring that draws itself on (ignites), then breathes
                 RoundedRectangle(cornerRadius: corner)
-                    .strokeBorder(grad, lineWidth: 2.5)
+                    .trim(from: 0, to: lit)
+                    .stroke(grad, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                     .opacity(breathe ? 1.0 : 0.6)
             )
             .onAppear {
-                breathe = false
-                withAnimation(.easeInOut(duration: 1.9).repeatForever(autoreverses: true)) { breathe = true }
+                lit = 0; breathe = false
+                // 1) the key line "lights up" by drawing its neon outline around, then
+                // 2) it settles into a slow breathe. Still NO blur/shadow (offscreen-pass
+                // free) — the read is all opaque fill + animated strokes.
+                withAnimation(.easeOut(duration: 0.85)) { lit = 1 }
+                withAnimation(.easeInOut(duration: 1.9).repeatForever(autoreverses: true).delay(0.85)) { breathe = true }
             }
     }
 }

@@ -28,6 +28,7 @@ struct ContentView: View {
             header
             presentButton
             openButton
+            reloadBundledButton
             if presentation.hasContent {
                 navigationControls
                 stageControls
@@ -87,6 +88,24 @@ struct ContentView: View {
         .alert("打开失败", isPresented: .constant(openError != nil)) {
             Button("好", role: .cancel) { openError = nil }
         } message: { Text(openError ?? "") }
+    }
+
+    /// Force-loads the freshly BUNDLED package, bypassing (and discarding) whatever is
+    /// cached in Documents/CurrentShow. `loadDefault` prefers CurrentShow, so after we
+    /// bake a new show.json into the app, a stale imported copy would otherwise shadow
+    /// it — this is the one-tap way to pick up the latest bundled deck on device.
+    private var reloadBundledButton: some View {
+        Button {
+            if let show = DeckLoader.loadBundled() {
+                presentation.replace(with: show); openError = nil
+            } else {
+                openError = "内置演示包读取失败（bundle 里没有 show.json）。"
+            }
+        } label: {
+            Label("重载内置包（丢弃已导入/编辑）", systemImage: "arrow.clockwise")
+                .frame(maxWidth: .infinity)
+        }
+        .controlSize(.large).buttonStyle(.bordered).tint(.orange)
     }
 
     private var navigationControls: some View {
