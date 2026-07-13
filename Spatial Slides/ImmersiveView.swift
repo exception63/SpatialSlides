@@ -2,29 +2,19 @@
 //  ImmersiveView.swift
 //  Spatial Slides
 //
-//  Created by zhouliying on 10/07/2026.
+//  Hosts the ring stage inside the mixed immersive space.
 //
 
 import SwiftUI
-import RealityKit
-import RealityKitContent
 
 struct ImmersiveView: View {
-
     var body: some View {
-        RealityView { content in
-            // Add the initial RealityKit content
-            if let immersiveContentEntity = try? await Entity(named: "Immersive", in: realityKitContentBundle) {
-                content.add(immersiveContentEntity)
-
-                // Put skybox here.  See example in World project available at
-                // https://developer.apple.com/
-            }
-        }
+        StageView()
     }
 }
 
 #Preview(immersionStyle: .mixed) {
     ImmersiveView()
         .environment(AppModel())
+        .environment(PresentationModel())
 }

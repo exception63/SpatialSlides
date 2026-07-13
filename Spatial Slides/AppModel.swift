@@ -18,4 +18,9 @@ class AppModel {
         case open
     }
     var immersiveSpaceState = ImmersiveSpaceState.closed
+
+    /// When true the show plays inside a full immersive environment (a dark studio)
+    /// instead of AR passthrough. Toggled from the remote; the Digital Crown can
+    /// also dial immersion.
+    var fullImmersion = false
 }
