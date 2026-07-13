@@ -233,6 +233,22 @@ struct ContentView: View {
             }
             .padding(.horizontal, 16).padding(.vertical, 8)
             .background(.teal.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+
+            HStack(spacing: 10) {
+                Image(systemName: "doc.text").foregroundStyle(.teal)
+                Text("讲稿板").font(.callout).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                Button { presentation.nudgeTranscriptBoardScale(0.9) } label: { Image(systemName: "minus.magnifyingglass") }
+                    .buttonStyle(.bordered).controlSize(.small)
+                Button { presentation.nudgeTranscriptBoardScale(1.11) } label: { Image(systemName: "plus.magnifyingglass") }
+                    .buttonStyle(.bordered).controlSize(.small)
+                Button { presentation.nudgeTranscriptBoardYaw(-.pi / 18) } label: { Image(systemName: "rotate.left") }
+                    .buttonStyle(.bordered).controlSize(.small)
+                Button { presentation.nudgeTranscriptBoardYaw(.pi / 18) } label: { Image(systemName: "rotate.right") }
+                    .buttonStyle(.bordered).controlSize(.small)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            .background(.teal.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
         }
     }
 

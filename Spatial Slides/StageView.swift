@@ -79,6 +79,9 @@ struct StageView: View {
             presentation.syncSliderToPageModel()
         }
         .onChange(of: presentation.deckScaleNonce) { _, _ in coordinator.scaleDeckPanel(presentation.deckScaleFactor) }
+        .onChange(of: presentation.transcriptBoardNonce) { _, _ in
+            coordinator.adjustTranscriptBoard(scale: presentation.transcriptBoardScaleFactor, yaw: presentation.transcriptBoardYaw)
+        }
         .onChange(of: appModel.fullImmersion) { _, on in
             coordinator.setImmersiveEnvironment(on, spec: presentation.environmentSpec)
         }
@@ -664,6 +667,19 @@ final class StageCoordinator {
         deck.scale = [s, s, s]
     }
 
+    /// Remote-driven resize + re-facing of the transcript board (a reliable path since a
+    /// two-hand pinch on the thin handle strip can be finicky). Scale multiplies; yaw adds.
+    func adjustTranscriptBoard(scale factor: Float, yaw: Float) {
+        guard let tx = transcriptPanel else { return }
+        if factor != 1 {
+            let s = min(max(tx.scale.x * factor, 0.5), 2.2)
+            tx.scale = [s, s, s]
+        }
+        if yaw != 0 {
+            tx.orientation = simd_quatf(angle: yaw, axis: [0, 1, 0]) * tx.orientation
+        }
+    }
+
     private var envScene: Entity?
 
     /// Full-immersion backdrop. Always lays a large gradient dome (dark studio so the
@@ -926,7 +942,10 @@ final class StageCoordinator {
         let handleHalf: Float = 0.03
         let shape = ShapeResource.generateBox(size: [h.x * 2, handleHalf * 2, 0.06])
             .offsetBy(translation: [0, h.y - handleHalf, 0])
-        enableManipulation(node, shape: shape, allowsScaling: false, allowsRotation: false)
+        // Grab the top strip to move; a two-hand pinch on it scales the board (the strip is
+        // wide, so both hands land). Re-facing is done from the remote (yaw nudges) so plain
+        // repositioning never tilts. The body stays collision-free, so it still scrolls.
+        enableManipulation(node, shape: shape, allowsScaling: true, allowsRotation: false)
     }
 
     func resolve(_ tapped: Entity) -> (Entity, String)? {

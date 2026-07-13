@@ -110,6 +110,14 @@ final class PresentationModel {
     private(set) var deckScaleFactor: Float = 1
     func nudgeDeckScale(_ factor: Float) { deckScaleFactor = factor; deckScaleNonce += 1 }
 
+    /// Transcript board resize + re-facing (from the remote). One nonce carries either a
+    /// scale factor (yaw 0) or a yaw delta (factor 1); the stage applies whichever is set.
+    private(set) var transcriptBoardNonce = 0
+    private(set) var transcriptBoardScaleFactor: Float = 1
+    private(set) var transcriptBoardYaw: Float = 0
+    func nudgeTranscriptBoardScale(_ factor: Float) { transcriptBoardScaleFactor = factor; transcriptBoardYaw = 0; transcriptBoardNonce += 1 }
+    func nudgeTranscriptBoardYaw(_ delta: Float) { transcriptBoardScaleFactor = 1; transcriptBoardYaw = delta; transcriptBoardNonce += 1 }
+
     init(show: Show? = nil) {
         self.show = show ?? DeckLoader.loadDefault()
     }
