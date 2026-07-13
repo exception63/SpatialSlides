@@ -92,10 +92,12 @@ struct ShowPage: Identifiable, Codable {
     var slide: String?          // package-relative hi-res PNG for the static far panel (#1)
     var anchor: String          // SLIDE_MAP id (kept for reference)
     var transcript: String      // this page's speaker script → the native transcript board
-    var elements: [ExhibitElement]   // near-field spatial accents for this page
+    var elements: [ExhibitElement]   // near-field spatial accents for this page (key lines, models, stats)
+    var asides: [ExhibitElement]     // right-board reference cards: backup evidence / citations / appendix (grammar §5)
+    var section: String?             // big-section label — env/transition hook (grammar §3.3, consumed by #4)
     var id: Int { index }
 
-    enum CodingKeys: String, CodingKey { case index, title, thumbnail, slide, anchor, transcript, elements }
+    enum CodingKeys: String, CodingKey { case index, title, thumbnail, slide, anchor, transcript, elements, asides, section }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         index = try c.decodeIfPresent(Int.self, forKey: .index) ?? 0
@@ -105,6 +107,8 @@ struct ShowPage: Identifiable, Codable {
         anchor = try c.decodeIfPresent(String.self, forKey: .anchor) ?? ""
         transcript = try c.decodeIfPresent(String.self, forKey: .transcript) ?? ""
         elements = try c.decodeIfPresent([ExhibitElement].self, forKey: .elements) ?? []
+        asides = try c.decodeIfPresent([ExhibitElement].self, forKey: .asides) ?? []
+        section = try c.decodeIfPresent(String.self, forKey: .section)
     }
 }
 

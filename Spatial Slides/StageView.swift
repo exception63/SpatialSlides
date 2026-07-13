@@ -57,6 +57,7 @@ struct StageView: View {
             if presentation.hasContent {
                 Attachment(id: Self.deckWebID) { DeckWebView() }
                 Attachment(id: Self.transcriptWebID) { TranscriptBoard() }
+                Attachment(id: Self.asideBoardID) { AsideBoard() }
                 ForEach(presentation.show.pages) { page in
                     Attachment(id: Self.cardID(page.index)) {
                         CarouselCard(page: page)
@@ -82,6 +83,9 @@ struct StageView: View {
         .onChange(of: presentation.deckScaleNonce) { _, _ in coordinator.scaleDeckPanel(presentation.deckScaleFactor) }
         .onChange(of: presentation.transcriptBoardNonce) { _, _ in
             coordinator.adjustTranscriptBoard(scale: presentation.transcriptBoardScaleFactor, yaw: presentation.transcriptBoardYaw)
+        }
+        .onChange(of: presentation.asideBoardNonce) { _, _ in
+            coordinator.adjustAsideBoard(scale: presentation.asideBoardScaleFactor, yaw: presentation.asideBoardYaw)
         }
         .onChange(of: appModel.fullImmersion) { _, on in
             coordinator.setImmersiveEnvironment(on, spec: presentation.environmentSpec)
@@ -152,6 +156,7 @@ struct StageView: View {
         buildCarouselIfNeeded(attachments)
 
         guard presentation.hasContent else { return }
+        coordinator.setAsideVisible(presentation.currentHasAsides)   // right board: only on pages with asides
         if presentation.currentPage != coordinator.renderedPage || presentation.version != coordinator.renderedVersion {
             coordinator.renderedPage = presentation.currentPage
             let versionChanged = presentation.version != coordinator.renderedVersion
@@ -190,6 +195,17 @@ struct StageView: View {
             coordinator.transcriptPanel = tx
             // Move by the top strip only, so the body stays scrollable.
             coordinator.makeMovableByHandle(tx, panelHalf: [Float(TranscriptBoard.boardW) / 2, Float(TranscriptBoard.boardH) / 2])
+        }
+        // Right reference board — mirror of the transcript window (grammar §5). Hidden by
+        // default; reconcile shows it only on pages that carry asides (backup material is
+        // secondary/on-demand). Movable by its top strip, like the transcript board.
+        if coordinator.asidePanel == nil, let aside = attachments.entity(for: Self.asideBoardID) {
+            aside.position = [1.5, 1.4, -1.25]                          // right window (mirrors left)
+            aside.orientation = simd_quatf(angle: -0.6, axis: [0, 1, 0])   // yaw toward the viewer from the right
+            aside.isEnabled = false
+            coordinator.root.addChild(aside)
+            coordinator.asidePanel = aside
+            coordinator.makeMovableByHandle(aside, panelHalf: [Float(AsideBoard.boardW) / 2, Float(AsideBoard.boardH) / 2])
         }
     }
 
@@ -246,6 +262,7 @@ struct StageView: View {
     static let controlBarID = "controlBar"
     static let deckWebID = "deckWeb"
     static let transcriptWebID = "transcriptWeb"
+    static let asideBoardID = "asideBoard"
     static func cardID(_ index: Int) -> String { "card-\(index)" }
 }
 
@@ -354,6 +371,91 @@ private struct TranscriptBoard: View {
     }
 }
 
+/// The right reference board (grammar §5): the current page's backup evidence,
+/// citations, and appendix material — the supporting layer you glance to when an
+/// argument needs backing. Deliberately more restrained than the near-field accents
+/// and cooler than the warm transcript board (steel-blue = "reference / source", not
+/// "speaker script"), so it reads as secondary. Only shown on pages that carry asides;
+/// moved by its top strip, resized/re-faced from the remote.
+private struct AsideBoard: View {
+    @Environment(PresentationModel.self) private var presentation
+
+    private let accent = Color(hex: "#5AC8FA")   // cool steel-blue — "evidence / source"
+
+    /// Shares the transcript board's type scale so the two flanking boards read at the
+    /// same size by default — and the remote's 讲稿字号 ± grows both together.
+    private var s: CGFloat { presentation.transcriptScale }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Capsule().fill(.white.opacity(0.35))
+                .frame(width: 66, height: 5)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 16).padding(.bottom, 14)
+
+            HStack(alignment: .center, spacing: 14) {
+                RoundedRectangle(cornerRadius: 2).fill(accent).frame(width: 6, height: 46 * s)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("参考 · EVIDENCE").font(.system(size: 15, weight: .heavy)).tracking(4)
+                        .foregroundStyle(.secondary)
+                    Text(heading).font(.system(size: 36 * s, weight: .bold))
+                        .foregroundStyle(.white).lineLimit(2).minimumScaleFactor(0.6)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "text.quote").font(.system(size: 22)).foregroundStyle(accent.opacity(0.6))
+            }
+            .padding(.horizontal, 34).padding(.bottom, 16)
+
+            Rectangle().fill(.white.opacity(0.12)).frame(height: 1).padding(.horizontal, 30)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    ForEach(presentation.currentAsides) { aside in card(aside) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 32).padding(.top, 22).padding(.bottom, 44)
+            }
+            .scrollIndicators(.visible)
+        }
+        .frame(width: Self.boardW * ppm, height: Self.boardH * ppm)
+        .glassBackgroundEffect(in: .rect(cornerRadius: 34))
+    }
+
+    static let boardW: CGFloat = 1.28
+    static let boardH: CGFloat = 1.62
+
+    /// Prefer the page's section label (the argument's current chapter) if present,
+    /// else the page title.
+    private var heading: String {
+        if let s = presentation.currentSection, !s.isEmpty { return s }
+        return presentation.currentTitle
+    }
+
+    /// One reference card: the evidence text, plus an optional source line (the aside's
+    /// `caption`, carried from `data-spatial-aside-cite`).
+    @ViewBuilder
+    private func card(_ aside: ExhibitElement) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let head = aside.text, !head.isEmpty {
+                Text(head).font(.system(size: 46 * s, weight: .regular)).lineSpacing(17)
+                    .foregroundStyle(.white.opacity(0.95))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let cite = aside.caption, !cite.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "quote.opening").font(.system(size: 20 * s)).foregroundStyle(accent)
+                    Text(cite).font(.system(size: 28 * s, weight: .medium)).italic()
+                        .foregroundStyle(accent.opacity(0.9))
+                }
+            }
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(accent.opacity(0.28), lineWidth: 1))
+    }
+}
+
 // MARK: - Coordinator
 
 @MainActor
@@ -363,6 +465,7 @@ final class StageCoordinator {
     var deckPanel: Entity?
     var staticDeckPanel: ModelEntity?     // #1: hi-res static slide texture (perf mode) — alternative to deckPanel's WKWebView
     var transcriptPanel: Entity?
+    var asidePanel: Entity?               // right reference board (grammar §5); shown only on pages with asides
     var backdrop: Entity?
     var nearContainer: Entity?
     var manipEndSub: EventSubscription?
@@ -688,6 +791,26 @@ final class StageCoordinator {
         }
         if yaw != 0 {
             tx.orientation = simd_quatf(angle: yaw, axis: [0, 1, 0]) * tx.orientation
+        }
+    }
+
+    /// Show/hide the right reference board — driven by whether the current page has asides.
+    /// Its transform (a user-dragged/scaled placement) is preserved across hide/show.
+    func setAsideVisible(_ on: Bool) {
+        guard let aside = asidePanel, aside.isEnabled != on else { return }
+        aside.isEnabled = on
+    }
+
+    /// Remote-driven resize + re-facing of the right reference board (mirror of the
+    /// transcript board control). Scale multiplies; yaw adds.
+    func adjustAsideBoard(scale factor: Float, yaw: Float) {
+        guard let aside = asidePanel else { return }
+        if factor != 1 {
+            let s = min(max(aside.scale.x * factor, 0.5), 2.2)
+            aside.scale = [s, s, s]
+        }
+        if yaw != 0 {
+            aside.orientation = simd_quatf(angle: yaw, axis: [0, 1, 0]) * aside.orientation
         }
     }
 

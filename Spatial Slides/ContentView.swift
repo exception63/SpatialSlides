@@ -249,6 +249,26 @@ struct ContentView: View {
             }
             .padding(.horizontal, 16).padding(.vertical, 8)
             .background(.teal.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+
+            // Right reference board (grammar §5) — only relevant on pages that carry asides,
+            // where the board is actually shown in-headset.
+            if presentation.currentHasAsides {
+                HStack(spacing: 10) {
+                    Image(systemName: "text.quote").foregroundStyle(Color(hex: "#5AC8FA"))
+                    Text("参考板").font(.callout).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button { presentation.nudgeAsideBoardScale(0.9) } label: { Image(systemName: "minus.magnifyingglass") }
+                        .buttonStyle(.bordered).controlSize(.small)
+                    Button { presentation.nudgeAsideBoardScale(1.11) } label: { Image(systemName: "plus.magnifyingglass") }
+                        .buttonStyle(.bordered).controlSize(.small)
+                    Button { presentation.nudgeAsideBoardYaw(.pi / 18) } label: { Image(systemName: "rotate.left") }
+                        .buttonStyle(.bordered).controlSize(.small)
+                    Button { presentation.nudgeAsideBoardYaw(-.pi / 18) } label: { Image(systemName: "rotate.right") }
+                        .buttonStyle(.bordered).controlSize(.small)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 8)
+                .background(Color(hex: "#5AC8FA").opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+            }
         }
     }
 

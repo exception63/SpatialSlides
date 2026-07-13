@@ -118,6 +118,14 @@ final class PresentationModel {
     func nudgeTranscriptBoardScale(_ factor: Float) { transcriptBoardScaleFactor = factor; transcriptBoardYaw = 0; transcriptBoardNonce += 1 }
     func nudgeTranscriptBoardYaw(_ delta: Float) { transcriptBoardScaleFactor = 1; transcriptBoardYaw = delta; transcriptBoardNonce += 1 }
 
+    /// Right reference board (asides) resize + re-facing — mirror of the transcript board
+    /// controls, applied by the stage's `adjustAsideBoard`.
+    private(set) var asideBoardNonce = 0
+    private(set) var asideBoardScaleFactor: Float = 1
+    private(set) var asideBoardYaw: Float = 0
+    func nudgeAsideBoardScale(_ factor: Float) { asideBoardScaleFactor = factor; asideBoardYaw = 0; asideBoardNonce += 1 }
+    func nudgeAsideBoardYaw(_ delta: Float) { asideBoardScaleFactor = 1; asideBoardYaw = delta; asideBoardNonce += 1 }
+
     init(show: Show? = nil) {
         self.show = show ?? DeckLoader.loadDefault()
     }
@@ -140,6 +148,12 @@ final class PresentationModel {
 
     var currentShowPage: ShowPage? { hasContent ? show.pages[clampedPage] : nil }
     var currentElements: [ExhibitElement] { currentShowPage?.elements ?? [] }
+    /// Right-board reference cards (backup evidence / citations / appendix) for this page.
+    /// The board (grammar §5) appears only when this is non-empty — backup material is
+    /// secondary and on-demand, so empty pages leave the right side clear.
+    var currentAsides: [ExhibitElement] { currentShowPage?.asides ?? [] }
+    var currentHasAsides: Bool { !(currentShowPage?.asides.isEmpty ?? true) }
+    var currentSection: String? { currentShowPage?.section }
     var currentAnchor: String { currentShowPage?.anchor ?? "" }
     var currentSlideImage: String? { currentShowPage?.slide }   // hi-res static far-panel image (#1)
     var currentTitle: String { currentShowPage?.title ?? "" }
