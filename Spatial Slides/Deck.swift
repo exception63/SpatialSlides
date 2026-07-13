@@ -89,17 +89,19 @@ struct ShowPage: Identifiable, Codable {
     var index: Int
     var title: String
     var thumbnail: String       // package-relative PNG (a carousel card)
+    var slide: String?          // package-relative hi-res PNG for the static far panel (#1)
     var anchor: String          // SLIDE_MAP id (kept for reference)
     var transcript: String      // this page's speaker script → the native transcript board
     var elements: [ExhibitElement]   // near-field spatial accents for this page
     var id: Int { index }
 
-    enum CodingKeys: String, CodingKey { case index, title, thumbnail, anchor, transcript, elements }
+    enum CodingKeys: String, CodingKey { case index, title, thumbnail, slide, anchor, transcript, elements }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         index = try c.decodeIfPresent(Int.self, forKey: .index) ?? 0
         title = try c.decodeIfPresent(String.self, forKey: .title) ?? ""
         thumbnail = try c.decodeIfPresent(String.self, forKey: .thumbnail) ?? ""
+        slide = try c.decodeIfPresent(String.self, forKey: .slide)
         anchor = try c.decodeIfPresent(String.self, forKey: .anchor) ?? ""
         transcript = try c.decodeIfPresent(String.self, forKey: .transcript) ?? ""
         elements = try c.decodeIfPresent([ExhibitElement].self, forKey: .elements) ?? []

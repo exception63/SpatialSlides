@@ -69,7 +69,8 @@ struct StageView: View {
         }
         .gesture(carouselDrag)
         .gesture(tapGesture)
-        .onChange(of: presentation.isEditing) { _, editing in coordinator.setEditing(editing) }
+        .onChange(of: presentation.isEditing) { _, editing in coordinator.setEditing(editing); refreshFarPanel() }
+        .onChange(of: presentation.motionMode) { _, _ in refreshFarPanel() }
         .onChange(of: presentation.selectedElementID) { _, id in coordinator.highlightElement(id) }
         .onChange(of: presentation.carouselAdjust) { _, on in coordinator.setCarouselAdjust(on) }
         .onChange(of: presentation.modelScaleAbsNonce) { _, _ in coordinator.setActiveModelScale(presentation.modelScaleAbs) }
@@ -158,7 +159,15 @@ struct StageView: View {
             rebuildNear(attachments)
             coordinator.rotateCarousel(toPage: presentation.currentPage, count: presentation.pageCount,
                                        animated: !versionChanged)
+            refreshFarPanel()
         }
+    }
+
+    /// #1: pick the far-panel renderer for the current page/mode — the static hi-res
+    /// texture in perf mode when a slide image exists, else the live WKWebView.
+    private func refreshFarPanel() {
+        let url = presentation.currentSlideImage.flatMap { DeckLoader.assetURL($0) }
+        coordinator.updateFarPanel(slideURL: url, motion: presentation.motionMode, editing: presentation.isEditing)
     }
 
     private func placePanels(_ attachments: RealityViewAttachments) {
@@ -171,6 +180,7 @@ struct StageView: View {
             deck.position = [0, 1.62, -3.0]          // far 主屏
             coordinator.root.addChild(deck)
             coordinator.deckPanel = deck
+            coordinator.installStaticFarPanel()      // #1: the static hi-res alternative panel
             // Movable/resizable only in edit ("摆放空间元素") mode — locked while presenting.
         }
         if coordinator.transcriptPanel == nil, let tx = attachments.entity(for: Self.transcriptWebID) {
@@ -351,6 +361,7 @@ final class StageCoordinator {
     let root = Entity()
     var controlBar: Entity?
     var deckPanel: Entity?
+    var staticDeckPanel: ModelEntity?     // #1: hi-res static slide texture (perf mode) — alternative to deckPanel's WKWebView
     var transcriptPanel: Entity?
     var backdrop: Entity?
     var nearContainer: Entity?
@@ -677,6 +688,37 @@ final class StageCoordinator {
         }
         if yaw != 0 {
             tx.orientation = simd_quatf(angle: yaw, axis: [0, 1, 0]) * tx.orientation
+        }
+    }
+
+    func installStaticFarPanel() {
+        guard staticDeckPanel == nil, deckPanel != nil else { return }
+        let plane = ModelEntity(mesh: .generatePlane(width: 2.6, height: 1.4625, cornerRadius: 0.02),
+                                materials: [UnlitMaterial(color: UIColor(hex: "#0A0E17"))])
+        plane.isEnabled = false
+        root.addChild(plane)
+        staticDeckPanel = plane
+    }
+
+    /// #1 static far panel. In perf mode (motion off, not editing) with a hi-res slide
+    /// image available, show a crisp static texture and disable the live WKWebView —
+    /// constant cost, no per-slide rasterization of a heavy DOM. Otherwise the WKWebView.
+    func updateFarPanel(slideURL: URL?, motion: Bool, editing: Bool) {
+        guard let web = deckPanel, let plane = staticDeckPanel else { return }
+        guard !motion, !editing, let url = slideURL else {
+            plane.isEnabled = false
+            web.isEnabled = true
+            return
+        }
+        plane.transform = web.transform
+        plane.position.z += 0.01
+        Task { @MainActor in
+            guard let tex = try? await TextureResource(contentsOf: url) else { return }
+            var mat = UnlitMaterial()
+            mat.color = .init(tint: .white, texture: .init(tex))
+            plane.model?.materials = [mat]
+            plane.isEnabled = true
+            web.isEnabled = false
         }
     }
 

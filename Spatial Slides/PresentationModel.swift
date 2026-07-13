@@ -141,6 +141,7 @@ final class PresentationModel {
     var currentShowPage: ShowPage? { hasContent ? show.pages[clampedPage] : nil }
     var currentElements: [ExhibitElement] { currentShowPage?.elements ?? [] }
     var currentAnchor: String { currentShowPage?.anchor ?? "" }
+    var currentSlideImage: String? { currentShowPage?.slide }   // hi-res static far-panel image (#1)
     var currentTitle: String { currentShowPage?.title ?? "" }
     var currentTranscript: String { currentShowPage?.transcript ?? "" }
 
