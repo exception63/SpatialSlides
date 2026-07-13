@@ -490,7 +490,11 @@ final class StageCoordinator {
                                    rotation: orient, translation: slot.position)
             if animated { card.move(to: target, relativeTo: carousel, duration: spin, timingFunction: .easeInOut) }
             else { card.transform = target }
-            card.components.set(OpacityComponent(opacity: slot.opacity))
+            // Only fading cards get an OpacityComponent — an opaque card with one is
+            // still forced into the transparent render pass (costly overdraw). Opaque
+            // cards have it removed so they render on the cheap opaque path.
+            if slot.opacity >= 0.999 { card.components.remove(OpacityComponent.self) }
+            else { card.components.set(OpacityComponent(opacity: slot.opacity)) }
         }
     }
 

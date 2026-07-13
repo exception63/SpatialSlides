@@ -13,6 +13,7 @@ import SwiftUI
 import RealityKit
 import simd
 import UIKit
+import ImageIO
 
 // MARK: - Card
 
@@ -53,17 +54,37 @@ struct CarouselCard: View {
     private var thumb: UIImage? { ThumbnailCache.image(page.thumbnail) }
 }
 
-/// Decoded thumbnails are cached — `CarouselCard.body` re-evaluates on every page
-/// change, and re-reading a 1280×720 PNG from disk each time hitched the transition.
+/// Decoded thumbnails are cached AND downsampled. `CarouselCard.body` re-evaluates on
+/// every page change (re-reading a 1280×720 PNG from disk each time hitched), and a
+/// card only renders ~420 pt wide — decoding the full 1280×720 wastes ~4× the memory
+/// (44 cards × 3.7 MB ≈ 160 MB → ≈ 40 MB). ImageIO decodes straight to a small size.
 enum ThumbnailCache {
     private static let cache = NSCache<NSString, UIImage>()
+    private static let maxPixel = 640   // covers a ~420 pt card with headroom
+
     static func image(_ relativePath: String) -> UIImage? {
         guard !relativePath.isEmpty, let url = DeckLoader.assetURL(relativePath) else { return nil }
         let key = url.path as NSString
         if let hit = cache.object(forKey: key) { return hit }
-        guard let img = UIImage(contentsOfFile: url.path) else { return nil }
+        guard let img = downsampled(url) else { return nil }
         cache.setObject(img, forKey: key)
         return img
+    }
+
+    private static func downsampled(_ url: URL) -> UIImage? {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary) else {
+            return UIImage(contentsOfFile: url.path)
+        }
+        let opts: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else {
+            return UIImage(contentsOfFile: url.path)
+        }
+        return UIImage(cgImage: cg)
     }
 }
 
@@ -82,7 +103,10 @@ enum Carousel {
     struct Slot { var position: SIMD3<Float>; var yaw: Float; var scale: Float; var opacity: Float; var visible: Bool }
 
     /// Cover-flow placement for a card at fractional offset `f` (= index − scrollPos).
-    /// Front (f≈0) is flat and largest; neighbours fan out, recede, tilt, and dim.
+    /// Front (f≈0) is flat and largest; neighbours fan out, recede, and tilt. Depth is
+    /// carried by scale + tilt + position — NOT opacity — so cards stay OPAQUE and out
+    /// of the expensive transparent-render pass. Only the single outermost card fades,
+    /// purely so it doesn't pop in/out at the window edge.
     static func slot(f: Float) -> Slot {
         let a = abs(f)
         let visible = a <= Float(window) + 0.5
@@ -91,7 +115,8 @@ enum Carousel {
         let z = -radius - a * 0.05
         let scale = max(0.5, 1 - a * 0.11)
         let yaw = -sign * min(a, 1) * 0.52          // ~30° cover-flow tilt; front flat
-        let opacity = visible ? max(0.12, 1 - a * 0.13) : 0
+        let fadeStart = Float(window) - 0.5          // opaque through the window…
+        let opacity: Float = !visible ? 0 : (a <= fadeStart ? 1 : max(0, Float(window) + 0.5 - a))
         return Slot(position: [x, y, z], yaw: yaw, scale: scale, opacity: opacity, visible: visible)
     }
 }

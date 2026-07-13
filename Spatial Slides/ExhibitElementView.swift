@@ -98,10 +98,12 @@ struct ExhibitElementView: View {
 }
 
 /// Cyber-neon treatment for the near-field key lines: a dark panel with a cyan→magenta
-/// glowing edge that breathes. Intentionally NOT glass — a dark fill + one static glow
-/// is far cheaper to composite than a live backdrop-blur, and reads more like a neon
-/// sign. Only the border OPACITY animates (cheap); the shadow radius is fixed (animating
-/// a blur radius would re-filter every frame and hurt the frame rate).
+/// glowing edge that breathes. Intentionally NO glass and NO drop-shadow — both are
+/// offscreen render passes (real-time backdrop blur / shadow blur), which Apple flags
+/// as very expensive on visionOS and which tanked the frame rate on element-heavy
+/// pages. The neon read comes entirely from an opaque dark fill + a bright DOUBLE
+/// stroke (a wider dim halo ring under a crisp bright ring) whose opacity breathes —
+/// all cheap, blur-free compositing.
 struct NeonGlow: ViewModifier {
     var corner: CGFloat = 30
     @State private var breathe = false
@@ -110,16 +112,19 @@ struct NeonGlow: ViewModifier {
     private let magenta = Color(hex: "#FF2D9B")
 
     func body(content: Content) -> some View {
-        content
-            .background(Color(hex: "#0B0E16").opacity(0.6), in: .rect(cornerRadius: corner))
-            .overlay(
-                RoundedRectangle(cornerRadius: corner)
-                    .strokeBorder(
-                        LinearGradient(colors: [cyan, magenta], startPoint: .topLeading, endPoint: .bottomTrailing),
-                        lineWidth: 2.5)
-                    .opacity(breathe ? 1.0 : 0.45)
+        let grad = LinearGradient(colors: [cyan, magenta], startPoint: .topLeading, endPoint: .bottomTrailing)
+        return content
+            .background(Color(hex: "#0B0E16").opacity(0.85), in: .rect(cornerRadius: corner))
+            .overlay(   // wider, dim ring = a fake "glow" halo without a real blur pass
+                RoundedRectangle(cornerRadius: corner + 3)
+                    .strokeBorder(grad, lineWidth: 7)
+                    .opacity(breathe ? 0.5 : 0.18)
             )
-            .shadow(color: cyan.opacity(0.55), radius: 14)
+            .overlay(   // crisp bright ring on top
+                RoundedRectangle(cornerRadius: corner)
+                    .strokeBorder(grad, lineWidth: 2.5)
+                    .opacity(breathe ? 1.0 : 0.6)
+            )
             .onAppear {
                 breathe = false
                 withAnimation(.easeInOut(duration: 1.9).repeatForever(autoreverses: true)) { breathe = true }

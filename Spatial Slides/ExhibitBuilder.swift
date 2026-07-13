@@ -46,23 +46,29 @@ enum ExhibitBuilder {
             }
             guard let model = loaded else { return }
             model.scale = [scale, scale, scale]
+
+            // Two-handed pinch-scale only ENGAGES when BOTH hands' pinches land on the
+            // collider of the entity that owns the ManipulationComponent. A loaded USDZ
+            // is a whole SUBTREE — if any descendant keeps its own collision, the
+            // wrapper's InputTargetComponent propagates down and the SECOND hand can
+            // resolve to a CHILD instead of `node`, so the two-hand pair never forms
+            // (single-hand move still works — exactly the bug). Strip the subtree so
+            // `node` is the ONLY hittable entity — structurally identical to the charts
+            // (a single entity with a passive mesh child), which scale fine on device.
+            Self.stripInteraction(model)
             placeholder.removeFromParent()
             node.addChild(model)
+            await Task.yield()   // let the freshly-loaded mesh's bounds settle
 
-            // Size a grab region to the visible model and enable FULL native
-            // manipulation — move, one/two-hand rotate, and two-hand pinch-scale —
-            // exactly like the charts (which resize fine on device). Two-handed scale
-            // only STARTS when the SECOND hand's pinch also lands on this collider:
-            // the charts' box is ~40 cm so both hands land easily, but the bear's
-            // tight ~18 cm box was too small for the second hand → scaling never
-            // engaged (even though one-hand grab/move worked). Floor the box at 40 cm
-            // to match the charts' grabbability. We do NOT disable built-in scaling.
-            let bounds = node.visualBounds(relativeTo: node)
-            let e = bounds.extents
-            let shape = ShapeResource.generateBox(size: [max(e.x * 1.4, 0.4),
-                                                          max(e.y * 1.4, 0.4),
-                                                          max(e.z * 1.4, 0.4)])
-                .offsetBy(translation: bounds.center)
+            // Re-center the model on node's origin, then use a CENTERED (un-offset)
+            // collider: an offset box can sit slightly off the visible mesh so the
+            // second hand misses it. Floor at 40 cm (the charts' grabbability).
+            let b = model.visualBounds(relativeTo: node)
+            model.position -= b.center
+            let e = b.extents
+            let shape = ShapeResource.generateBox(size: [max(e.x * 1.2, 0.4),
+                                                          max(e.y * 1.2, 0.4),
+                                                          max(e.z * 1.2, 0.4)])
             node.components.set(InputTargetComponent())
             node.components.set(HoverEffectComponent())
             node.components.set(CollisionComponent(shapes: [shape]))
@@ -73,6 +79,15 @@ enum ExhibitBuilder {
             }
         }
         return node
+    }
+
+    /// Recursively removes collision + input from a loaded model's subtree so only the
+    /// wrapper node is a hit target — required for two-handed manipulation to pair the
+    /// second hand to the same (manipulable) entity as the first.
+    private static func stripInteraction(_ e: Entity) {
+        e.components.remove(CollisionComponent.self)
+        e.components.remove(InputTargetComponent.self)
+        for child in e.children { stripInteraction(child) }
     }
 
     /// A bright, tilted rounded cube — reads as a solid 3D object from a
