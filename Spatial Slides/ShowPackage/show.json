@@ -65,6 +65,13 @@
               1.05,
               -0.5
             ]
+          },
+          "animation": {
+            "loop": {
+              "effect": "float",
+              "period": 3.5,
+              "amplitude": 1.5
+            }
           }
         }
       ]

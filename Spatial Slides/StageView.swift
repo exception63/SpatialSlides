@@ -29,12 +29,17 @@ struct StageView: View {
         RealityView { content, _ in
             content.add(coordinator.root)
             coordinator.installBackdrop()
+            coordinator.manipBeginSub = content.subscribe(to: ManipulationEvents.WillBegin.self) { event in
+                guard let (node, _) = coordinator.resolve(event.entity) else { return }
+                coordinator.setManipulating(node, true)    // freeze this node's loop while hands hold it
+            }
             coordinator.manipEndSub = content.subscribe(to: ManipulationEvents.WillEnd.self) { event in
                 guard let (node, id) = coordinator.resolve(event.entity) else { return }
                 presentation.setTransform(elementID: id, position: node.position,
                                           orientation: node.orientation, scale: node.scale.x)
                 presentation.selectedElementID = id
                 coordinator.noteManipulated(node)   // if a model was pinch-scaled, sync the remote slider
+                coordinator.setManipulating(node, false)   // resume its loop from where it was left
             }
             coordinator.onModelRescaled = { id, pos, ori, s in
                 presentation.setTransform(elementID: id, position: pos, orientation: ori, scale: s)
@@ -210,6 +215,9 @@ struct StageView: View {
             container.addChild(node)
             coordinator.buildIn(node, element: element, rank: rank)
             coordinator.registerTappable(node, element: element)
+            if !element.usesAttachment, let loop = element.animation?.loop {
+                coordinator.registerLooper(node, loop: loop, startDelay: Double(rank) * 0.06 + 0.45)
+            }
         }
         coordinator.root.addChild(container)
         coordinator.nearContainer = container
@@ -344,6 +352,7 @@ final class StageCoordinator {
     var backdrop: Entity?
     var nearContainer: Entity?
     var manipEndSub: EventSubscription?
+    var manipBeginSub: EventSubscription?
 
     var renderedPage = -1
     var renderedVersion = -1
@@ -388,6 +397,13 @@ final class StageCoordinator {
     private var emphasisMap: [ObjectIdentifier: EmphasisEffect] = [:]
     private var selectedNode: Entity?
     private var selectionOutline: Entity?
+
+    // Loop animations (spin/float/breathe). Restored after the 2026-07 refactor dropped
+    // the old tickLoops driver. Only the 3D nodes (models/charts) loop; flat panels
+    // breathe via NeonGlow. See the "Loop animations" section for how they compose with
+    // manipulation without fighting it.
+    private var loopers: [Looper] = []
+    private var manipulatingNodes: Set<ObjectIdentifier> = []
 
     // MARK: Backdrop (tap empty → next)
 
@@ -484,6 +500,7 @@ final class StageCoordinator {
     func tick(deltaTime: TimeInterval) {
         tickCarouselAdjust()
         tickCarouselAnimation(deltaTime: deltaTime)
+        tickLoops(deltaTime: deltaTime)
     }
 
     @discardableResult
@@ -719,6 +736,67 @@ final class StageCoordinator {
         return fallback
     }
 
+    // MARK: Loop animations (spin / float / breathe)
+
+    /// The per-page "life" of the 3D accents — restored after the 2026-07 refactor
+    /// dropped the old tickLoops driver. Effects are applied INCREMENTALLY (frame
+    /// deltas, never set-from-a-stored-base), so they compose with two-hand
+    /// manipulation instead of overwriting it, and a node held by the hands freezes
+    /// its loop (phase held) and resumes without a jump on release. Only the RealityKit
+    /// 3D nodes (models/charts) loop; flat text/key-line panels already breathe via
+    /// NeonGlow.
+    private struct Looper {
+        weak var node: Entity?
+        let effect: LoopEffect
+        let omega: Double         // 2π / period (rad/s)
+        let amplitude: Float
+        var phase: Double = 0     // advances only while the node isn't being held
+        let startDelay: Double    // wait out the build-in move before animating
+        var elapsed: Double = 0
+    }
+
+    func registerLooper(_ node: Entity, loop: LoopAnim, startDelay: Double) {
+        guard loop.effect != .none else { return }
+        let period = max(0.4, loop.period)
+        loopers.append(Looper(node: node, effect: loop.effect,
+                              omega: 2 * .pi / period,
+                              amplitude: Float(max(0, loop.amplitude)),
+                              startDelay: startDelay))
+    }
+
+    /// Freeze/resume a node's loop while it's under a hand — called from the
+    /// manipulation Will-Begin / Will-End subscriptions so a grab never fights the loop.
+    func setManipulating(_ node: Entity, _ on: Bool) {
+        if on { manipulatingNodes.insert(ObjectIdentifier(node)) }
+        else { manipulatingNodes.remove(ObjectIdentifier(node)) }
+    }
+
+    private func tickLoops(deltaTime dt: TimeInterval) {
+        guard !loopers.isEmpty else { return }
+        for i in loopers.indices {
+            guard let node = loopers[i].node else { continue }
+            loopers[i].elapsed += dt
+            if loopers[i].elapsed < loopers[i].startDelay { continue }
+            if manipulatingNodes.contains(ObjectIdentifier(node)) { continue }   // held → hold phase
+            let w = loopers[i].omega
+            let p = loopers[i].phase
+            loopers[i].phase += dt
+            let t = loopers[i].phase
+            switch loopers[i].effect {
+            case .spin:
+                node.orientation = simd_quatf(angle: Float(w * dt), axis: [0, 1, 0]) * node.orientation
+            case .float:
+                let amp = (loopers[i].amplitude <= 0 ? 1 : loopers[i].amplitude) * 0.03   // ±3 cm × amplitude
+                node.position.y += amp * Float(sin(w * t) - sin(w * p))
+            case .breathe:
+                let amp = (loopers[i].amplitude <= 0 ? 1 : loopers[i].amplitude) * 0.04   // ±4 % scale × amplitude
+                node.scale *= (1 + amp * Float(sin(w * t))) / (1 + amp * Float(sin(w * p)))
+            case .none:
+                break
+            }
+        }
+    }
+
     // MARK: Near elements
 
     func clearNear() {
@@ -734,6 +812,8 @@ final class StageCoordinator {
         emphasisMap.removeAll()
         selectedNode = nil
         selectionOutline = nil
+        loopers.removeAll()
+        manipulatingNodes.removeAll()
     }
 
     func buildIn(_ node: Entity, element: ExhibitElement, rank: Int) {
