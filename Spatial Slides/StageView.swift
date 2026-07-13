@@ -23,6 +23,7 @@ struct StageView: View {
     @Environment(PresentationModel.self) private var presentation
     @Environment(AppModel.self) private var appModel
     @State private var coordinator = StageCoordinator()
+    @State private var pendingPageCommit: Task<Void, Never>?
 
     var body: some View {
         RealityView { content, _ in
@@ -39,10 +40,10 @@ struct StageView: View {
                 presentation.setTransform(elementID: id, position: pos, orientation: ori, scale: s)
             }
             coordinator.onActiveModelScale = { s in presentation.syncModelScaleSlider(toScale: s) }
-            // Per-frame: while the carousel is being repositioned, the whole wheel
-            // follows the grab handle (see StageCoordinator.tickCarouselAdjust).
-            coordinator.updateSub = content.subscribe(to: SceneEvents.Update.self) { _ in
-                coordinator.tickCarouselAdjust()
+            // Per-frame: drive the lightweight carousel tween and, in adjust mode,
+            // mirror the grab handle's motion onto the whole wheel.
+            coordinator.updateSub = content.subscribe(to: SceneEvents.Update.self) { event in
+                coordinator.tick(deltaTime: event.deltaTime)
             }
         } update: { _, attachments in
             reconcile(attachments: attachments)
@@ -53,7 +54,7 @@ struct StageView: View {
                 Attachment(id: Self.transcriptWebID) { TranscriptBoard() }
                 ForEach(presentation.show.pages) { page in
                     Attachment(id: Self.cardID(page.index)) {
-                        CarouselCard(page: page, isCurrent: page.index == presentation.currentPage)
+                        CarouselCard(page: page)
                     }
                 }
                 ForEach(presentation.currentElements.filter { $0.usesAttachment }) { element in
@@ -67,7 +68,11 @@ struct StageView: View {
         .onChange(of: presentation.selectedElementID) { _, id in coordinator.highlightElement(id) }
         .onChange(of: presentation.carouselAdjust) { _, on in coordinator.setCarouselAdjust(on) }
         .onChange(of: presentation.modelScaleAbsNonce) { _, _ in coordinator.setActiveModelScale(presentation.modelScaleAbs) }
-        .onChange(of: presentation.currentPage) { _, _ in presentation.syncSliderToPageModel() }
+        .onChange(of: presentation.currentPage) { _, _ in
+            pendingPageCommit?.cancel()
+            pendingPageCommit = nil
+            presentation.syncSliderToPageModel()
+        }
         .onChange(of: presentation.deckScaleNonce) { _, _ in coordinator.scaleDeckPanel(presentation.deckScaleFactor) }
         .onChange(of: appModel.fullImmersion) { _, on in
             coordinator.setImmersiveEnvironment(on, spec: presentation.environmentSpec)
@@ -90,7 +95,7 @@ struct StageView: View {
             .onEnded { value in
                 guard !presentation.carouselAdjust, coordinator.cardIndex(for: value.entity) != nil else { return }
                 let page = coordinator.endCarouselDrag()
-                withAnimation(.snappy) { presentation.setPage(page) }
+                navigateViaCarousel(to: page)
             }
     }
 
@@ -104,15 +109,31 @@ struct StageView: View {
             .onEnded { value in
                 guard !presentation.carouselAdjust else { return }
                 if let card = coordinator.cardIndex(for: value.entity) {
-                    withAnimation(.snappy) { presentation.setPage(card) }
+                    navigateViaCarousel(to: card)
                 } else if presentation.isEditing {
                     presentation.selectedElementID = coordinator.resolve(value.entity)?.1
                 } else if coordinator.selectModelIfTarget(value.entity) {
                     // tapped a 3D model in play mode → now the active model for ± resize
                 } else if !coordinator.playEmphasisIfTarget(value.entity) {
-                    presentation.next()
+                    navigateViaCarousel(to: presentation.currentPage + 1)
                 }
             }
+    }
+
+    /// Keep the wheel animation isolated from the expensive page commit. Heavy HTML
+    /// slides still need one large WKWebView rasterization, but it now happens after the
+    /// carousel has reached its target instead of during the spin.
+    private func navigateViaCarousel(to rawPage: Int) {
+        guard presentation.hasContent else { return }
+        let page = min(max(rawPage, 0), presentation.pageCount - 1)
+        pendingPageCommit?.cancel()
+        let delay = coordinator.rotateCarousel(toPage: page, count: presentation.pageCount, animated: true)
+        guard page != presentation.currentPage else { return }
+        pendingPageCommit = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(delay + 0.03))
+            guard !Task.isCancelled else { return }
+            presentation.setPage(page)
+        }
     }
 
     // MARK: - Reconcile
@@ -178,7 +199,9 @@ struct StageView: View {
                 guard let e = attachments.entity(for: element.id) else { continue }
                 node = e
             } else {
-                node = ExhibitBuilder.build(element)
+                node = ExhibitBuilder.build(element) { [coordinator] modelNode, shape, halfExtent in
+                    coordinator.refreshLoadedModel(modelNode, shape: shape, halfExtent: halfExtent)
+                }
             }
             let t = element.transform ?? ElementTransform(position: [0, 1.2, -0.5])
             node.position = t.position
@@ -344,9 +367,18 @@ final class StageCoordinator {
     private var dragging = false
     private var indexForCard: [ObjectIdentifier: Int] = [:]
     private var cards: [Entity?] = []
+    private var cardHighlight: Entity?
+    private weak var highlightedCard: Entity?
+    private var carouselAnimation: CarouselAnimation?
     /// Pages per drag-point. Higher = faster. Negate to flip drag direction.
     private let dragSensitivity: Float = 0.004
-    private let spin: TimeInterval = 0.4
+
+    private struct CarouselAnimation {
+        var startOffset: Float
+        var targetOffset: Float
+        var elapsed: TimeInterval
+        var duration: TimeInterval
+    }
 
     // Near-element editing (ported)
     private(set) var isEditing = false
@@ -376,11 +408,15 @@ final class StageCoordinator {
     func buildCarousel(cards: [Entity?], count: Int) {
         carousel?.removeFromParent()
         adjustHandle?.removeFromParent()
+        cardHighlight?.removeFromParent()
+        highlightedCard = nil
+        carouselAnimation = nil
         indexForCard.removeAll()
         let container = Entity()                 // holds the cards; a direct child of root
         root.addChild(container)
         carousel = container
         self.cards = cards
+        cardHighlight = makeCardHighlight()
         for (i, card) in cards.enumerated() {
             guard let card else { continue }
             card.components.set(InputTargetComponent())
@@ -417,6 +453,25 @@ final class StageCoordinator {
         return bar
     }
 
+    private func makeCardHighlight() -> Entity {
+        let frame = Entity()
+        let material = UnlitMaterial(color: UIColor(hex: "#5AC8FA"))
+        let size = Carousel.collisionSize
+        let w = size.x, h = size.y
+        let t: Float = 0.008
+        let z: Float = 0.018
+        func bar(_ sx: Float, _ sy: Float, _ x: Float, _ y: Float) {
+            let b = ModelEntity(mesh: .generateBox(size: [sx, sy, t]), materials: [material])
+            b.position = [x, y, z]
+            frame.addChild(b)
+        }
+        bar(w + t * 2, t, 0, h / 2 + t / 2)
+        bar(w + t * 2, t, 0, -h / 2 - t / 2)
+        bar(t, h + t * 2, -w / 2 - t / 2, 0)
+        bar(t, h + t * 2, w / 2 + t / 2, 0)
+        return frame
+    }
+
     /// Adjust mode. On: reveal the handle at the wheel's front and make it grabbable;
     /// remember where wheel & handle start so `tickCarouselAdjust` can mirror the
     /// handle's motion onto the wheel. Off: hide + de-arm the handle. Navigation is
@@ -430,15 +485,7 @@ final class StageCoordinator {
             handle.orientation = StageView.facing(handle.position)
             handle.isEnabled = true
             let box = ShapeResource.generateBox(size: [0.44, 0.14, 0.14])
-            handle.components.set(InputTargetComponent())
-            handle.components.set(HoverEffectComponent())
-            handle.components.set(CollisionComponent(shapes: [box]))
-            ManipulationComponent.configureEntity(handle, collisionShapes: [box])
-            if var m = handle.components[ManipulationComponent.self] {
-                m.releaseBehavior = .stay
-                m.dynamics.scalingBehavior = .none   // the bar is a fixed-size grip; don't let a pinch resize it
-                handle.components.set(m)
-            }
+            enableManipulation(handle, shape: box, allowsScaling: false, allowsRotation: false)
             carouselAnchor = container.position
             handleAnchor = handle.position
         } else {
@@ -458,18 +505,48 @@ final class StageCoordinator {
         container.position = carouselAnchor + (handle.position - handleAnchor)
     }
 
-    func rotateCarousel(toPage page: Int, count: Int, animated: Bool) {
-        carouselOffset = Float(page)
-        layoutCards(offset: carouselOffset, animated: animated)
+    func tick(deltaTime: TimeInterval) {
+        tickCarouselAdjust()
+        tickCarouselAnimation(deltaTime: deltaTime)
+    }
+
+    @discardableResult
+    func rotateCarousel(toPage page: Int, count: Int, animated: Bool) -> TimeInterval {
+        let target = Float(min(max(page, 0), max(count - 1, 0)))
+        updateCurrentCardHighlight(page: Int(target))
+        guard animated else {
+            carouselAnimation = nil
+            carouselOffset = target
+            layoutCards(offset: carouselOffset)
+            return 0
+        }
+
+        let distance = abs(target - carouselOffset)
+        guard distance > 0.001 else {
+            carouselAnimation = nil
+            carouselOffset = target
+            layoutCards(offset: carouselOffset)
+            return 0
+        }
+
+        let duration = min(0.55, max(0.22, 0.18 + TimeInterval(distance) * 0.06))
+        carouselAnimation = CarouselAnimation(
+            startOffset: carouselOffset,
+            targetOffset: target,
+            elapsed: 0,
+            duration: duration
+        )
+        return duration
     }
 
     /// Live drag: scroll the cover-flow under the hand (no snap yet).
     func dragCarousel(translation: Float) {
         guard !cards.isEmpty else { return }
+        carouselAnimation = nil
         if !dragging { dragging = true; dragBaseOffset = carouselOffset }
         let count = cards.count
         carouselOffset = min(max(dragBaseOffset - translation * dragSensitivity, 0), Float(count - 1))
-        layoutCards(offset: carouselOffset, animated: false)
+        layoutCards(offset: carouselOffset)
     }
 
     /// Release: the page to snap to (StageView animates the model to it).
@@ -478,8 +555,38 @@ final class StageCoordinator {
         return min(max(Int(carouselOffset.rounded()), 0), max(cards.count - 1, 0))
     }
 
+    private func tickCarouselAnimation(deltaTime: TimeInterval) {
+        guard var animation = carouselAnimation else { return }
+        animation.elapsed += deltaTime
+        let rawT = min(max(Float(animation.elapsed / animation.duration), 0), 1)
+        let eased = rawT * rawT * (3 - 2 * rawT)
+        carouselOffset = animation.startOffset + (animation.targetOffset - animation.startOffset) * eased
+        layoutCards(offset: carouselOffset)
+        if rawT >= 1 {
+            carouselOffset = animation.targetOffset
+            carouselAnimation = nil
+            layoutCards(offset: carouselOffset)
+        } else {
+            carouselAnimation = animation
+        }
+    }
+
+    private func updateCurrentCardHighlight(page: Int) {
+        guard let highlight = cardHighlight,
+              cards.indices.contains(page),
+              let card = cards[page] else {
+            cardHighlight?.removeFromParent()
+            highlightedCard = nil
+            return
+        }
+        guard highlightedCard !== card else { return }
+        highlight.removeFromParent()
+        card.addChild(highlight)
+        highlightedCard = card
+    }
+
     /// Positions every card by its fractional distance from the front slot.
-    private func layoutCards(offset: Float, animated: Bool) {
+    private func layoutCards(offset: Float) {
         for (i, card) in cards.enumerated() {
             guard let card else { continue }
             let slot = Carousel.slot(f: Float(i) - offset)
@@ -488,8 +595,7 @@ final class StageCoordinator {
             let orient = StageView.facing(slot.position) * simd_quatf(angle: slot.yaw, axis: [0, 1, 0])
             let target = Transform(scale: [slot.scale, slot.scale, slot.scale],
                                    rotation: orient, translation: slot.position)
-            if animated { card.move(to: target, relativeTo: carousel, duration: spin, timingFunction: .easeInOut) }
-            else { card.transform = target }
+            card.transform = target
             // Only fading cards get an OpacityComponent — an opaque card with one is
             // still forced into the transparent render pass (costly overdraw). Opaque
             // cards have it removed so they render on the cheap opaque path.
@@ -523,6 +629,14 @@ final class StageCoordinator {
             cur = n.parent
         }
         return nil
+    }
+
+    func refreshLoadedModel(_ node: Entity, shape: ShapeResource, halfExtent: SIMD2<Float>) {
+        let key = ObjectIdentifier(node)
+        guard modelNodes.contains(key), elementForEntity[key] != nil else { return }
+        shapeForNode[key] = shape
+        halfExtentForEntity[key] = halfExtent
+        enableManipulation(node, shape: shape)
     }
 
     /// Remote slider: set the ACTIVE model's absolute scale (stepless). Only touches
@@ -703,13 +817,14 @@ final class StageCoordinator {
         if effect != .none { emphasisMap[key] = effect }
 
         // 3D primitives are always grabbable — pick them up, rotate, pinch-scale like
-        // a real product, in play mode too. Models get their manipulation from
-        // ExhibitBuilder after the mesh loads (bounds-matched); we just remember them
-        // so leaving edit mode doesn't strip it. Flat accents wait for edit.
+        // a real product, in play mode too. Models start with a reliable fallback
+        // collider, then refresh to mesh bounds when their USDZ finishes loading.
+        // Flat accents wait for edit.
         switch element.kind {
         case .model:
             modelNodes.insert(key)
             alwaysGrabNodes.insert(key)
+            enableManipulation(node, shape: shape)
             if activeModelID == nil { activeModelID = element.id }   // page's first model = default ± target
         case .barChart, .scatter:
             alwaysGrabNodes.insert(key)
@@ -719,10 +834,20 @@ final class StageCoordinator {
         }
     }
 
-    private func enableManipulation(_ node: Entity, shape: ShapeResource) {
+    private func enableManipulation(_ node: Entity, shape: ShapeResource,
+                                    allowsScaling: Bool = true,
+                                    allowsRotation: Bool = true) {
+        node.components.set(InputTargetComponent())
+        node.components.set(HoverEffectComponent())
+        node.components.set(CollisionComponent(shapes: [shape]))
         ManipulationComponent.configureEntity(node, collisionShapes: [shape])
         if var manip = node.components[ManipulationComponent.self] {
             manip.releaseBehavior = .stay
+            manip.dynamics.inertia = .low
+            manip.dynamics.translationBehavior = .unconstrained
+            manip.dynamics.scalingBehavior = allowsScaling ? .unconstrained : .none
+            manip.dynamics.primaryRotationBehavior = allowsRotation ? .unconstrained : .none
+            manip.dynamics.secondaryRotationBehavior = allowsRotation ? .unconstrained : .none
             node.components.set(manip)
         }
     }
@@ -740,7 +865,7 @@ final class StageCoordinator {
         let handleHalf: Float = 0.03
         let shape = ShapeResource.generateBox(size: [h.x * 2, handleHalf * 2, 0.06])
             .offsetBy(translation: [0, h.y - handleHalf, 0])
-        enableManipulation(node, shape: shape)
+        enableManipulation(node, shape: shape, allowsScaling: false, allowsRotation: false)
     }
 
     func resolve(_ tapped: Entity) -> (Entity, String)? {

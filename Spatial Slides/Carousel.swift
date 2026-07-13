@@ -19,39 +19,68 @@ import ImageIO
 
 struct CarouselCard: View {
     let page: ShowPage
-    var isCurrent: Bool = false
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            if let img = thumb {
-                Image(uiImage: img).resizable().scaledToFill()
-            } else {
-                LinearGradient(colors: [Color(hex: "#26324C"), Color(hex: "#3A2340")],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                Text(page.title).font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.9)).lineLimit(3).padding(16)
-            }
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.white.opacity(0.12))
+
+            thumbnailContent
+                .opacity(0.72)
+                .saturation(0.82)
+                .contrast(0.92)
+
+            LinearGradient(colors: [
+                .white.opacity(0.30),
+                .white.opacity(0.08),
+                .black.opacity(0.24),
+            ], startPoint: .topLeading, endPoint: .bottomTrailing)
+
+            RoundedRectangle(cornerRadius: 14)
+                .fill(.white.opacity(0.08))
+                .blendMode(.screen)
+
             Text("\(page.index + 1)")
                 .font(.system(size: 19, weight: .bold, design: .rounded)).monospacedDigit()
                 .foregroundStyle(.white)
                 .padding(.horizontal, 9).padding(.vertical, 4)
-                .background(.black.opacity(0.55), in: Capsule()).padding(10)
+                .background(.white.opacity(0.18), in: Capsule())
+                .overlay(Capsule().strokeBorder(.white.opacity(0.28), lineWidth: 1))
+                .shadow(color: .black.opacity(0.35), radius: 7, y: 2)
+                .padding(10)
         }
         .frame(width: Carousel.frameSize.width, height: Carousel.frameSize.height)
-        .background(Color(hex: "#0C1018"), in: .rect(cornerRadius: 14))
+        .background(.black.opacity(0.18), in: .rect(cornerRadius: 14))
         .clipShape(.rect(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(isCurrent ? Color.accentColor : .white.opacity(0.18),
-                              lineWidth: isCurrent ? 6 : 1)
+                .strokeBorder(.white.opacity(0.42), lineWidth: 1)
         )
-        // NOTE: no glassBackgroundEffect here. A ring of ~9–11 live glass panels is a
-        // heavy real-time backdrop-blur cost — it dropped the whole scene's frame rate
-        // (carousel spin AND near-element build-ins looked low-fps on element pages).
-        // Thumbnails are opaque images, so a solid backing + border reads just as well.
+        .overlay(alignment: .topLeading) {
+            LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                .frame(height: 54)
+                .clipShape(.rect(cornerRadius: 14))
+                .allowsHitTesting(false)
+        }
+        .shadow(color: .black.opacity(0.28), radius: 18, y: 10)
+        // NOTE: avoid glassBackgroundEffect here. A ring of live backdrop-blur panels is
+        // costly in an immersive scene, so this is a static frosted-glass treatment.
     }
 
     private var thumb: UIImage? { ThumbnailCache.image(page.thumbnail) }
+
+    @ViewBuilder
+    private var thumbnailContent: some View {
+        if let img = thumb {
+            Image(uiImage: img).resizable().scaledToFill()
+        } else {
+            LinearGradient(colors: [Color(hex: "#26324C"), Color(hex: "#3A2340")],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            Text(page.title).font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.9)).lineLimit(3).padding(16)
+        }
+    }
 }
 
 /// Decoded thumbnails are cached AND downsampled. `CarouselCard.body` re-evaluates on

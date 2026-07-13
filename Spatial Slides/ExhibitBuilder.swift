@@ -12,15 +12,16 @@ import UIKit
 import SwiftUI
 
 enum ExhibitBuilder {
+    typealias ModelReadyHandler = @MainActor (_ node: Entity, _ shape: ShapeResource, _ halfExtent: SIMD2<Float>) -> Void
 
-    static func build(_ element: ExhibitElement) -> Entity {
+    static func build(_ element: ExhibitElement, onModelReady: ModelReadyHandler? = nil) -> Entity {
         switch element.kind {
         case .barChart:
             return BarChart3D.make(bars: element.bars ?? [])
         case .scatter:
             return Scatter3D.make(points: element.points ?? [])
         case .model:
-            return buildModel(element)
+            return buildModel(element, onModelReady: onModelReady)
         default:
             return Entity()   // text-ish + image → SwiftUI glass attachments
         }
@@ -28,7 +29,7 @@ enum ExhibitBuilder {
 
     // MARK: - Model (placeholder now, real USDZ when it loads)
 
-    private static func buildModel(_ element: ExhibitElement) -> Entity {
+    private static func buildModel(_ element: ExhibitElement, onModelReady: ModelReadyHandler?) -> Entity {
         let node = Entity()
         let placeholder = placeholderModel()
         node.addChild(placeholder)
@@ -66,17 +67,11 @@ enum ExhibitBuilder {
             let b = model.visualBounds(relativeTo: node)
             model.position -= b.center
             let e = b.extents
-            let shape = ShapeResource.generateBox(size: [max(e.x * 1.2, 0.4),
-                                                          max(e.y * 1.2, 0.4),
-                                                          max(e.z * 1.2, 0.4)])
-            node.components.set(InputTargetComponent())
-            node.components.set(HoverEffectComponent())
-            node.components.set(CollisionComponent(shapes: [shape]))
-            ManipulationComponent.configureEntity(node, collisionShapes: [shape])
-            if var manip = node.components[ManipulationComponent.self] {
-                manip.releaseBehavior = .stay
-                node.components.set(manip)
-            }
+            let hitSize = SIMD3<Float>(max(e.x * 1.2, 0.4),
+                                       max(e.y * 1.2, 0.4),
+                                       max(e.z * 1.2, 0.4))
+            let shape = ShapeResource.generateBox(size: hitSize)
+            onModelReady?(node, shape, [hitSize.x / 2, hitSize.y / 2])
         }
         return node
     }
@@ -87,6 +82,9 @@ enum ExhibitBuilder {
     private static func stripInteraction(_ e: Entity) {
         e.components.remove(CollisionComponent.self)
         e.components.remove(InputTargetComponent.self)
+        e.components.remove(HoverEffectComponent.self)
+        e.components.remove(ManipulationComponent.self)
+        e.components.remove(ManipulationComponent.HitTarget.self)
         for child in e.children { stripInteraction(child) }
     }
 
