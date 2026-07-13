@@ -243,7 +243,7 @@ private struct DeckWebView: View {
     var body: some View {
         Group {
             if let url = DeckLoader.assetURL(presentation.show.html) {
-                HTMLPanel(fileURL: url, page: presentation.currentPage)
+                HTMLPanel(fileURL: url, page: presentation.currentPage, motionMode: presentation.motionMode)
             } else {
                 Color.black.opacity(0.3)
             }
@@ -800,7 +800,27 @@ final class StageCoordinator {
     // MARK: Near elements
 
     func clearNear() {
-        nearContainer?.removeFromParent()
+        // Exit animation: the 3D nodes we own (models/charts = alwaysGrabNodes) shrink and
+        // sink out before removal instead of vanishing hard. Flat panels are SwiftUI
+        // attachments (managed by the RealityView), so they leave with currentElements.
+        if let exiting = nearContainer {
+            let owned = alwaysGrabNodes
+            let leaving = exiting.children.filter { owned.contains(ObjectIdentifier($0)) }
+            for node in leaving {
+                var t = node.transform
+                t.scale *= 0.6
+                t.translation += [0, -0.05, -0.14]
+                node.move(to: t, relativeTo: node.parent, duration: 0.24, timingFunction: .easeIn)
+            }
+            if leaving.isEmpty {
+                exiting.removeFromParent()
+            } else {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(0.26))
+                    exiting.removeFromParent()
+                }
+            }
+        }
         nearContainer = nil
         elementForEntity.removeAll()
         nodeForElement.removeAll()

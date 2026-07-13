@@ -14,6 +14,7 @@ import WebKit
 struct HTMLPanel: UIViewRepresentable {
     let fileURL: URL
     var page: Int = 0
+    var motionMode: Bool = false     // false = perf (dampen + fast switcher); true = keep HTML animations
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -44,6 +45,7 @@ struct HTMLPanel: UIViewRepresentable {
             context.coordinator.loadedURL = fileURL
         }
         context.coordinator.setActive(page)
+        context.coordinator.setMotion(motionMode)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -54,14 +56,18 @@ struct HTMLPanel: UIViewRepresentable {
         var ready = false
         private var lastPage = -1
         private var requestedPage = 0
+        private var motion = false            // current live mode
+        private var requestedMotion = false   // desired mode (may arrive before the page is ready)
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             ready = true
             lastPage = -1
+            motion = false                    // a fresh load always starts dampened (perf)
             // Enter single-slide present mode directly, with the deck chrome hidden.
             webView.evaluateJavaScript(HTMLPanel.enterPresentJS) { [weak self] _, _ in
                 guard let self else { return }
                 self.setActive(self.requestedPage)
+                if self.requestedMotion { self.applyMotion(webView) }   // restore motion if it was on
             }
         }
 
@@ -70,6 +76,24 @@ struct HTMLPanel: UIViewRepresentable {
             guard ready, let webView, page != lastPage else { return }
             lastPage = page
             webView.evaluateJavaScript(HTMLPanel.setActiveJS(page), completionHandler: nil)
+        }
+
+        /// Toggle whether the deck's own build animations play. Perf mode dampens them and
+        /// uses the fast, side-effect-free switcher; motion mode hands navigation back to
+        /// deckAPI so the HTML slides animate (accepting the jank the fast path avoided).
+        func setMotion(_ on: Bool) {
+            requestedMotion = on
+            guard ready, let webView, on != motion else { return }
+            applyMotion(webView)
+        }
+
+        private func applyMotion(_ webView: WKWebView) {
+            motion = requestedMotion
+            webView.evaluateJavaScript(HTMLPanel.setMotionJS(motion)) { [weak self] _, _ in
+                guard let self else { return }
+                self.lastPage = -1               // force a re-navigation so the new mode's path runs
+                self.setActive(self.requestedPage)
+            }
         }
     }
 
@@ -125,6 +149,20 @@ struct HTMLPanel: UIViewRepresentable {
           window.__spatialLast = idx;
           return idx;
         };
+
+        window.__spatialMotion = false;
+        window.__spatialSetMotion = function (on) {
+          window.__spatialMotion = !!on;
+          var st = document.getElementById('__spatial_dampen__');
+          if (st) st.disabled = !!on;              // motion on → stop dampening animations
+          var list = slides();
+          if (on) {                                 // hand navigation back to the deck (animations play)
+            for (var i = 0; i < list.length; i++) list[i].style.display = '';
+            window.__spatialLast = -1;
+          } else if (window.__spatialEnterPresent) {
+            window.__spatialEnterPresent();         // back to the fast, animation-free switcher
+          }
+        };
       } catch (e) {}
     })();
     """
@@ -142,10 +180,15 @@ struct HTMLPanel: UIViewRepresentable {
         """
         (function () {
           try {
+            if (window.__spatialMotion && window.deckAPI && window.deckAPI.setActive) return window.deckAPI.setActive(\(page));
             if (window.__spatialSetActive) return window.__spatialSetActive(\(page));
             if (window.deckAPI && window.deckAPI.setActive) return window.deckAPI.setActive(\(page));
           } catch (e) {}
         })();
         """
+    }
+
+    static func setMotionJS(_ on: Bool) -> String {
+        "(function(){ try { if (window.__spatialSetMotion) window.__spatialSetMotion(\(on ? "true" : "false")); } catch (e) {} })();"
     }
 }

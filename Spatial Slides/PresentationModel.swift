@@ -29,6 +29,11 @@ final class PresentationModel {
     /// wheel); its scroll/tap navigation is suspended until turned off.
     var carouselAdjust = false
 
+    /// HTML "motion" mode. Off (default) → the far deck is dampened and uses the fast
+    /// switcher for smooth immersive navigation; on → the deck keeps its build animations
+    /// (via deckAPI), for rehearsal/recording where frame drops are acceptable. See HTMLPanel.
+    var motionMode = false
+
     /// Stepless model resize from the remote's slider. `modelScaleSlider` (0…1) maps
     /// exponentially to an absolute scale; dragging it bumps `modelScaleAbsNonce` and
     /// the stage sets the active model to `modelScaleAbs`. When a different model

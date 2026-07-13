@@ -146,6 +146,16 @@ struct ContentView: View {
                 .tint(appModel.fullImmersion ? .teal : .gray)
             }
 
+            Button {
+                withAnimation(.snappy) { presentation.motionMode.toggle() }
+            } label: {
+                Label(presentation.motionMode ? "HTML 动效：开（保留幻灯动画，可能掉帧）" : "HTML 动效：关（静态 · 流畅）",
+                      systemImage: "sparkles")
+                    .frame(maxWidth: .infinity)
+            }
+            .controlSize(.large).buttonStyle(.bordered)
+            .tint(presentation.motionMode ? .pink : .gray)
+
             if presentation.currentHasModel {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 10) {

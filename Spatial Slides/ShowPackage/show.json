@@ -58,7 +58,7 @@
         {
           "kind": "model",
           "asset": "Toy_Bear_01.usdz",
-          "modelScale": 0.15,
+          "modelScale": 0.08,
           "transform": {
             "position": [
               0.6,
