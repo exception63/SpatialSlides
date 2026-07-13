@@ -984,10 +984,11 @@ final class StageCoordinator {
         let handleHalf: Float = 0.03
         let shape = ShapeResource.generateBox(size: [h.x * 2, handleHalf * 2, 0.06])
             .offsetBy(translation: [0, h.y - handleHalf, 0])
-        // Grab the top strip to move; a two-hand pinch on it scales the board (the strip is
-        // wide, so both hands land). Re-facing is done from the remote (yaw nudges) so plain
-        // repositioning never tilts. The body stays collision-free, so it still scrolls.
-        enableManipulation(node, shape: shape, allowsScaling: true, allowsRotation: false)
+        // Grab the top strip to move; a two-hand pinch on it scales the board, and hand
+        // rotation re-faces it freely (360°, all axes — e.g. lay it flat on a desk), like
+        // the deck panel. The remote's yaw ± is a precise shortcut. The body stays
+        // collision-free, so it still scrolls.
+        enableManipulation(node, shape: shape, allowsScaling: true, allowsRotation: true)
     }
 
     func resolve(_ tapped: Entity) -> (Entity, String)? {

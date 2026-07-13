@@ -180,7 +180,17 @@ struct HTMLPanel: UIViewRepresentable {
         """
         (function () {
           try {
-            if (window.__spatialMotion && window.deckAPI && window.deckAPI.setActive) return window.deckAPI.setActive(\(page));
+            if (window.__spatialMotion && window.deckAPI && window.deckAPI.setActive) {
+              var r = window.deckAPI.setActive(\(page));
+              // deckAPI only sets --sc when the deck's own `present` flag is on, which this
+              // app never toggles (we enter present via a class, not togglePresent). Without
+              // --sc the slide stays at scale 1 (1920×1080) and fills only part of the large
+              // spatial WKWebView — the "page doesn't fill in motion mode" bug. Force the fit.
+              var sc = Math.min(window.innerWidth / 1920, window.innerHeight / 1080) * 0.98;
+              var a = document.querySelector('.slide.active');
+              if (a) a.style.setProperty('--sc', sc);
+              return r;
+            }
             if (window.__spatialSetActive) return window.__spatialSetActive(\(page));
             if (window.deckAPI && window.deckAPI.setActive) return window.deckAPI.setActive(\(page));
           } catch (e) {}
