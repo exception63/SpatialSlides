@@ -10,6 +10,13 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// The `.sslides` package UTI (declared in Info.plist as com.apple.package). Declaring it
+/// makes the OS treat a `.sslides` folder as a single selectable document — required so the
+/// visionOS Files picker can pick it (a plain folder can't be selected on visionOS).
+extension UTType {
+    static let sslides = UTType(exportedAs: "com.liying.Spatial-Slides.sslides", conformingTo: .package)
+}
+
 struct ContentView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(PresentationModel.self) private var presentation
@@ -71,7 +78,7 @@ struct ContentView: View {
         }
         .controlSize(.large).buttonStyle(.bordered)
         .fileImporter(isPresented: $showImporter,
-                      allowedContentTypes: [.folder, .json],
+                      allowedContentTypes: [.sslides, .folder, .json],
                       allowsMultipleSelection: false) { result in
             switch result {
             case .success(let urls):
