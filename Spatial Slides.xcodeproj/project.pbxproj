@@ -7,10 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		141DE3CE98874A64ACBA68BE /* SpatialBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 21D6382FDEF047BE9A6CE436 /* SpatialBridgeKit */; };
 		E08500A8300097C900E6F8C6 /* RealityKitContent in Frameworks */ = {isa = PBXBuildFile; productRef = E08500A7300097C900E6F8C6 /* RealityKitContent */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		14048B6861A144F691F27827 /* SpatialBridgeKit */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = SpatialBridgeKit; sourceTree = "<group>"; };
 		E08500A2300097C900E6F8C6 /* Spatial Slides.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Spatial Slides.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		E08500A6300097C900E6F8C6 /* RealityKitContent */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = RealityKitContent; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -41,6 +43,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				141DE3CE98874A64ACBA68BE /* SpatialBridgeKit in Frameworks */,
 				E08500A8300097C900E6F8C6 /* RealityKitContent in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -68,6 +71,7 @@
 		E08500A5300097C900E6F8C6 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
+				14048B6861A144F691F27827 /* SpatialBridgeKit */,
 				E08500A6300097C900E6F8C6 /* RealityKitContent */,
 			);
 			path = Packages;
@@ -93,6 +97,7 @@
 			);
 			name = "Spatial Slides";
 			packageProductDependencies = (
+				21D6382FDEF047BE9A6CE436 /* SpatialBridgeKit */,
 				E08500A7300097C900E6F8C6 /* RealityKitContent */,
 			);
 			productName = "Spatial Slides";
@@ -357,6 +362,10 @@
 /* End XCConfigurationList section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		21D6382FDEF047BE9A6CE436 /* SpatialBridgeKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SpatialBridgeKit;
+		};
 		E08500A7300097C900E6F8C6 /* RealityKitContent */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = RealityKitContent;

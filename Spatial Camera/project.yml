@@ -1,0 +1,60 @@
+name: Spatial Camera
+
+options:
+  bundleIdPrefix: com.liying
+  deploymentTarget:
+    iOS: "26.0"
+  xcodeVersion: "27.0"
+
+packages:
+  SpatialBridgeKit:
+    path: ../Packages/SpatialBridgeKit
+
+targets:
+  Spatial Camera:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes:
+          - Info.plist
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Spatial Camera
+        NSCameraUsageDescription: Spatial Camera uses the camera to place shared Vision Pro content in the room.
+        NSMicrophoneUsageDescription: Spatial Camera can include narration while recording.
+        NSPhotoLibraryAddUsageDescription: Spatial Camera saves completed AR recordings to Photos.
+        NSLocalNetworkUsageDescription: Spatial Camera connects to nearby Vision Pro presentations.
+        NSBonjourServices:
+          - _spatialbridge._tcp
+        UIRequiredDeviceCapabilities:
+          - arkit
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    dependencies:
+      - package: SpatialBridgeKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.liying.SpatialCamera
+        DEVELOPMENT_TEAM: C5BH6BHB9Q
+        SWIFT_VERSION: 5.0
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    scheme:
+      gatherCoverageData: false
+
+schemes:
+  Spatial Camera:
+    build:
+      targets:
+        Spatial Camera: all
+    run:
+      config: Debug
+    archive:
+      config: Release

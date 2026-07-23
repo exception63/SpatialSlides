@@ -22,6 +22,7 @@ private let ppm: CGFloat = 1360   // visionOS renders SwiftUI attachments at ~13
 struct StageView: View {
     @Environment(PresentationModel.self) private var presentation
     @Environment(AppModel.self) private var appModel
+    @Environment(SpatialSlidesBridgeHost.self) private var spatialBridge
     @State private var coordinator = StageCoordinator()
     @State private var pendingPageCommit: Task<Void, Never>?
 
@@ -29,14 +30,23 @@ struct StageView: View {
         RealityView { content, _ in
             content.add(coordinator.root)
             coordinator.installBackdrop()
+            coordinator.installSpectatorAlignmentMarker()
+            coordinator.setSpectatorMarkerVisible(spatialBridge.hasViewer)
             coordinator.manipBeginSub = content.subscribe(to: ManipulationEvents.WillBegin.self) { event in
+                if coordinator.isSpectatorAlignmentMarker(event.entity) { return }
                 guard let (node, _) = coordinator.resolve(event.entity) else { return }
                 coordinator.setManipulating(node, true)    // freeze this node's loop while hands hold it
             }
             coordinator.manipEndSub = content.subscribe(to: ManipulationEvents.WillEnd.self) { event in
+                if let stageFromShared = coordinator.finishSpectatorAlignmentMarkerManipulation(event.entity) {
+                    spatialBridge.updateSharedFrame(stageFromShared: stageFromShared)
+                    spatialBridge.publish(presentation)
+                    return
+                }
                 guard let (node, id) = coordinator.resolve(event.entity) else { return }
                 presentation.setTransform(elementID: id, position: node.position,
                                           orientation: node.orientation, scale: node.scale.x)
+                spatialBridge.publish(presentation)
                 presentation.selectedElementID = id
                 coordinator.noteManipulated(node)   // if a model was pinch-scaled, sync the remote slider
                 coordinator.setManipulating(node, false)   // resume its loop from where it was left
@@ -71,7 +81,10 @@ struct StageView: View {
         .gesture(carouselDrag)
         .gesture(tapGesture)
         .onChange(of: presentation.isEditing) { _, editing in coordinator.setEditing(editing); refreshFarPanel() }
-        .onChange(of: presentation.motionMode) { _, _ in refreshFarPanel() }
+        .onChange(of: presentation.motionMode) { _, _ in
+            refreshFarPanel()
+            spatialBridge.publish(presentation)
+        }
         .onChange(of: presentation.selectedElementID) { _, id in coordinator.highlightElement(id) }
         .onChange(of: presentation.carouselAdjust) { _, on in coordinator.setCarouselAdjust(on) }
         .onChange(of: presentation.modelScaleAbsNonce) { _, _ in coordinator.setActiveModelScale(presentation.modelScaleAbs) }
@@ -79,9 +92,11 @@ struct StageView: View {
             pendingPageCommit?.cancel()
             pendingPageCommit = nil
             presentation.syncSliderToPageModel()
+            spatialBridge.publish(presentation)
         }
         .onChange(of: presentation.currentBeat) { _, beat in
             coordinator.revealBeat(beat)   // #4: presenter advanced the attention timeline
+            spatialBridge.publish(presentation)
         }
         .onChange(of: presentation.deckScaleNonce) { _, _ in coordinator.scaleDeckPanel(presentation.deckScaleFactor) }
         .onChange(of: presentation.transcriptBoardNonce) { _, _ in
@@ -94,6 +109,13 @@ struct StageView: View {
             coordinator.setImmersiveEnvironment(on, spec: presentation.environmentSpec)
         }
         .onChange(of: presentation.envNonce) { _, _ in coordinator.applyEnvironmentTransform(presentation.environmentSpec) }
+        .onChange(of: spatialBridge.hasViewer) { _, connected in
+            coordinator.setSpectatorMarkerVisible(connected)
+            if connected { spatialBridge.publish(presentation) }
+        }
+        .task {
+            spatialBridge.publish(presentation)
+        }
     }
 
     // MARK: - Gestures
@@ -484,6 +506,7 @@ final class StageCoordinator {
     var transcriptPanel: Entity?
     var asidePanel: Entity?               // right reference board (grammar §5); shown only on pages with asides
     var backdrop: Entity?
+    private var spectatorAlignmentMarker: Entity?
     var nearContainer: Entity?
     var manipEndSub: EventSubscription?
     var manipBeginSub: EventSubscription?
@@ -549,6 +572,74 @@ final class StageCoordinator {
         e.components.set(CollisionComponent(shapes: [.generateBox(size: [18, 12, 0.05])]))
         root.addChild(e)
         backdrop = e
+    }
+
+    // MARK: Spatial Camera alignment
+
+    func installSpectatorAlignmentMarker() {
+        guard spectatorAlignmentMarker == nil else { return }
+        let marker = Entity()
+        marker.position = SpatialSlidesBridgeHost.sharedOriginInStage
+
+        var cyan = UnlitMaterial(color: UIColor(hex: "#2CD9F7"))
+        cyan.faceCulling = .none
+        let origin = ModelEntity(mesh: .generateSphere(radius: 0.035), materials: [cyan])
+        marker.addChild(origin)
+
+        let shaft = ModelEntity(
+            mesh: .generateBox(size: [0.025, 0.025, 0.28], cornerRadius: 0.01),
+            materials: [cyan]
+        )
+        shaft.position.z = 0.14
+        marker.addChild(shaft)
+
+        let head = ModelEntity(mesh: .generateCone(height: 0.11, radius: 0.065), materials: [cyan])
+        head.orientation = simd_quatf(angle: .pi / 2, axis: [1, 0, 0])
+        head.position.z = 0.33
+        marker.addChild(head)
+
+        enableManipulation(
+            marker,
+            shape: .generateBox(size: [0.18, 0.18, 0.48]),
+            allowsScaling: false,
+            allowsRotation: true
+        )
+        marker.isEnabled = false
+        root.addChild(marker)
+        spectatorAlignmentMarker = marker
+    }
+
+    func setSpectatorMarkerVisible(_ visible: Bool) {
+        spectatorAlignmentMarker?.isEnabled = visible
+    }
+
+    func isSpectatorAlignmentMarker(_ entity: Entity) -> Bool {
+        ancestor(of: entity, matching: spectatorAlignmentMarker) != nil
+    }
+
+    func finishSpectatorAlignmentMarkerManipulation(_ entity: Entity) -> simd_float4x4? {
+        guard let marker = ancestor(of: entity, matching: spectatorAlignmentMarker) else { return nil }
+        let forward = marker.orientation.act(SIMD3<Float>(0, 0, 1))
+        let horizontal = SIMD3<Float>(forward.x, 0, forward.z)
+        if simd_length_squared(horizontal) > 0.0001 {
+            let direction = simd_normalize(horizontal)
+            let yaw = atan2(direction.x, direction.z)
+            marker.orientation = simd_quatf(angle: yaw, axis: [0, 1, 0])
+        } else {
+            marker.orientation = simd_quatf()
+        }
+        marker.scale = .one
+        return marker.transform.matrix
+    }
+
+    private func ancestor(of entity: Entity, matching target: Entity?) -> Entity? {
+        guard let target else { return nil }
+        var candidate: Entity? = entity
+        while let current = candidate {
+            if current === target { return current }
+            candidate = current.parent
+        }
+        return nil
     }
 
     // MARK: Carousel

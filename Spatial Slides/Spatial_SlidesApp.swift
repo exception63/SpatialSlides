@@ -12,12 +12,18 @@ struct Spatial_SlidesApp: App {
 
     @State private var appModel = AppModel()
     @State private var presentation = PresentationModel()
+    @State private var spatialBridge = SpatialSlidesBridgeHost()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(appModel)
                 .environment(presentation)
+                .environment(spatialBridge)
+                .task {
+                    spatialBridge.start()
+                    spatialBridge.publish(presentation)
+                }
         }
         .windowStyle(.plain)
         .defaultSize(width: 560, height: 760)
@@ -26,6 +32,7 @@ struct Spatial_SlidesApp: App {
             ImmersiveView()
                 .environment(appModel)
                 .environment(presentation)
+                .environment(spatialBridge)
                 .onAppear {
                     appModel.immersiveSpaceState = .open
                 }

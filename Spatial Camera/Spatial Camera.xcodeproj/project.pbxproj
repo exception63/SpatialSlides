@@ -1,0 +1,367 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		65B517F954C65FB3119E272D /* SpatialCameraModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A4AEB420914FEB12199910 /* SpatialCameraModel.swift */; };
+		6742C371FE57CA558F5EAE19 /* SpatialBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = F5E842675D4178E434939354 /* SpatialBridgeKit */; };
+		8C92F00C538CCE08157C6EA9 /* SpatialSlidesARSceneRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C58D7BD9020088459CAD25E /* SpatialSlidesARSceneRenderer.swift */; };
+		AF98A9344C90BB0C0CF410D5 /* SpatialRecordingController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C433FCDB5EFA0D176470ABDA /* SpatialRecordingController.swift */; };
+		CABDB49A4208F4D0DD16AB6C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3A3E1069DA63ACE72CCE7DE5 /* Assets.xcassets */; };
+		D213565DAF53648708C53F4D /* SpatialCameraApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4CEAA0A7EA64C50558AB4BB /* SpatialCameraApp.swift */; };
+		DD8A9FFF63B5AAD36BA7BA9B /* SpatialARView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEFB231BFCB9E8B1504A370B /* SpatialARView.swift */; };
+		F7F330517AF305C248A85F5F /* SpatialCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 827079BDA533128A5790C378 /* SpatialCameraView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		2C58D7BD9020088459CAD25E /* SpatialSlidesARSceneRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialSlidesARSceneRenderer.swift; sourceTree = "<group>"; };
+		3A3E1069DA63ACE72CCE7DE5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		827079BDA533128A5790C378 /* SpatialCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialCameraView.swift; sourceTree = "<group>"; };
+		9F9009A1411FCC74631002C8 /* Spatial Camera.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Spatial Camera.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A9E4B384DA47B56E53B29267 /* SpatialBridgeKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SpatialBridgeKit; path = ../Packages/SpatialBridgeKit; sourceTree = SOURCE_ROOT; };
+		B4CEAA0A7EA64C50558AB4BB /* SpatialCameraApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialCameraApp.swift; sourceTree = "<group>"; };
+		C433FCDB5EFA0D176470ABDA /* SpatialRecordingController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialRecordingController.swift; sourceTree = "<group>"; };
+		C5A4AEB420914FEB12199910 /* SpatialCameraModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialCameraModel.swift; sourceTree = "<group>"; };
+		CEFB231BFCB9E8B1504A370B /* SpatialARView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialARView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A71D86B62659CA8AAE01E29B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6742C371FE57CA558F5EAE19 /* SpatialBridgeKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		641A970FBF8E2FE929D4AFDB = {
+			isa = PBXGroup;
+			children = (
+				853FEE6033089785AE59BC4F /* App */,
+				74AD522EBAB23A0EF45E0A2C /* Packages */,
+				EE0B06FEDE2FAAD000A53A07 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		74AD522EBAB23A0EF45E0A2C /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				A9E4B384DA47B56E53B29267 /* SpatialBridgeKit */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		853FEE6033089785AE59BC4F /* App */ = {
+			isa = PBXGroup;
+			children = (
+				3A3E1069DA63ACE72CCE7DE5 /* Assets.xcassets */,
+				CEFB231BFCB9E8B1504A370B /* SpatialARView.swift */,
+				B4CEAA0A7EA64C50558AB4BB /* SpatialCameraApp.swift */,
+				C5A4AEB420914FEB12199910 /* SpatialCameraModel.swift */,
+				827079BDA533128A5790C378 /* SpatialCameraView.swift */,
+				C433FCDB5EFA0D176470ABDA /* SpatialRecordingController.swift */,
+				2C58D7BD9020088459CAD25E /* SpatialSlidesARSceneRenderer.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		EE0B06FEDE2FAAD000A53A07 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9F9009A1411FCC74631002C8 /* Spatial Camera.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		53896908B7B9415754C6043C /* Spatial Camera */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F74EFA65CDEB28EB2DFF57BE /* Build configuration list for PBXNativeTarget "Spatial Camera" */;
+			buildPhases = (
+				B5395FC3B52C6550CD1B092D /* Sources */,
+				E546114D679AE79986184417 /* Resources */,
+				A71D86B62659CA8AAE01E29B /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Spatial Camera";
+			packageProductDependencies = (
+				F5E842675D4178E434939354 /* SpatialBridgeKit */,
+			);
+			productName = "Spatial Camera";
+			productReference = 9F9009A1411FCC74631002C8 /* Spatial Camera.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		3DDC9C4CF56589728F133A4A /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					53896908B7B9415754C6043C = {
+						DevelopmentTeam = C5BH6BHB9Q;
+					};
+				};
+			};
+			buildConfigurationList = C18A7889871FF38C25A512DF /* Build configuration list for PBXProject "Spatial Camera" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 641A970FBF8E2FE929D4AFDB;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				09BCA78B4B918BBA64486D08 /* XCLocalSwiftPackageReference "../Packages/SpatialBridgeKit" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = EE0B06FEDE2FAAD000A53A07 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				53896908B7B9415754C6043C /* Spatial Camera */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E546114D679AE79986184417 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CABDB49A4208F4D0DD16AB6C /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		B5395FC3B52C6550CD1B092D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DD8A9FFF63B5AAD36BA7BA9B /* SpatialARView.swift in Sources */,
+				D213565DAF53648708C53F4D /* SpatialCameraApp.swift in Sources */,
+				65B517F954C65FB3119E272D /* SpatialCameraModel.swift in Sources */,
+				F7F330517AF305C248A85F5F /* SpatialCameraView.swift in Sources */,
+				AF98A9344C90BB0C0CF410D5 /* SpatialRecordingController.swift in Sources */,
+				8C92F00C538CCE08157C6EA9 /* SpatialSlidesARSceneRenderer.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		01F1269963A12ECB20C3A0DB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = C5BH6BHB9Q;
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.liying.SpatialCamera;
+				SDKROOT = iphoneos;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		0C98C02EAF84001B7A02CBAD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		0EC61CB668E14B1ABAA24265 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		1C9B0C01829C2E00DDFFF04A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = C5BH6BHB9Q;
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.liying.SpatialCamera;
+				SDKROOT = iphoneos;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		C18A7889871FF38C25A512DF /* Build configuration list for PBXProject "Spatial Camera" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0C98C02EAF84001B7A02CBAD /* Debug */,
+				0EC61CB668E14B1ABAA24265 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F74EFA65CDEB28EB2DFF57BE /* Build configuration list for PBXNativeTarget "Spatial Camera" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1C9B0C01829C2E00DDFFF04A /* Debug */,
+				01F1269963A12ECB20C3A0DB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		09BCA78B4B918BBA64486D08 /* XCLocalSwiftPackageReference "../Packages/SpatialBridgeKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/SpatialBridgeKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F5E842675D4178E434939354 /* SpatialBridgeKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SpatialBridgeKit;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 3DDC9C4CF56589728F133A4A /* Project object */;
+}

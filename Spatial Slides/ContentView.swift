@@ -20,6 +20,7 @@ extension UTType {
 struct ContentView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(PresentationModel.self) private var presentation
+    @Environment(SpatialSlidesBridgeHost.self) private var spatialBridge
     @Environment(\.openImmersiveSpace) private var openImmersiveSpace
     @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
 
@@ -33,6 +34,7 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 22) {
             header
+            spectatorStatus
             presentButton
             openButton
             reloadBundledButton
@@ -46,6 +48,10 @@ struct ContentView: View {
         }
         .padding(30)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: presentation.currentPage) { _, _ in spatialBridge.publish(presentation) }
+        .onChange(of: presentation.currentBeat) { _, _ in spatialBridge.publish(presentation) }
+        .onChange(of: presentation.motionMode) { _, _ in spatialBridge.publish(presentation) }
+        .onChange(of: presentation.version) { _, _ in spatialBridge.publish(presentation) }
     }
 
     private var header: some View {
@@ -58,6 +64,20 @@ struct ContentView: View {
                 .contentTransition(.numericText())
                 .lineLimit(1)
         }
+    }
+
+    private var spectatorStatus: some View {
+        HStack(spacing: 10) {
+            Image(systemName: spatialBridge.hasViewer ? "iphone.radiowaves.left.and.right" : "iphone")
+                .foregroundStyle(spatialBridge.hasViewer ? .green : .secondary)
+            Text(spatialBridge.statusLabel)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 40)
+        .background(.secondary.opacity(0.08), in: .rect(cornerRadius: 8))
     }
 
     private var presentButton: some View {
