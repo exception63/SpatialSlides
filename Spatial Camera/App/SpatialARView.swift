@@ -31,8 +31,10 @@ struct SpatialARView: UIViewRepresentable {
             snapshot: model.snapshot,
             alignmentFrame: model.alignmentFrame,
             calibrationOrigin: model.calibrationOrigin,
-            showAlignmentFixture: !recorder.isRecording,
+            showAlignmentFixture: !recorder.isRecording && !recorder.isPreparing,
             assetURL: model.assetURL(for:),
+            modelAssetURLs: model.availableModelAssetURLs,
+            reportRenderIssue: model.reportRenderIssue(_:),
             sceneRevision: model.sceneRevision,
             alignmentRevision: model.alignmentRevision
         )
@@ -59,6 +61,8 @@ struct SpatialARView: UIViewRepresentable {
             calibrationOrigin: SIMD3<Float>?,
             showAlignmentFixture: Bool,
             assetURL: (String) -> URL?,
+            modelAssetURLs: [URL],
+            reportRenderIssue: @escaping (String) -> Void,
             sceneRevision: Int,
             alignmentRevision: Int
         ) {
@@ -68,6 +72,8 @@ struct SpatialARView: UIViewRepresentable {
                 calibrationOrigin: calibrationOrigin,
                 showAlignmentFixture: showAlignmentFixture,
                 assetURL: assetURL,
+                modelAssetURLs: modelAssetURLs,
+                reportRenderIssue: reportRenderIssue,
                 sceneRevision: sceneRevision,
                 alignmentRevision: alignmentRevision
             )

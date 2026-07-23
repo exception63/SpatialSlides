@@ -89,9 +89,12 @@ public struct BridgeElementSnapshot: Codable, Equatable, Sendable {
     public var value: String?
     public var caption: String?
     public var assetPath: String?
+    public var modelScale: Float?
     public var bars: [BridgeBarValue]?
     public var points: [BridgeScatterPoint]?
     public var loopEffect: String?
+    public var loopPeriod: Double?
+    public var loopAmplitude: Double?
 
     public init(
         id: String,
@@ -106,9 +109,12 @@ public struct BridgeElementSnapshot: Codable, Equatable, Sendable {
         value: String? = nil,
         caption: String? = nil,
         assetPath: String? = nil,
+        modelScale: Float? = nil,
         bars: [BridgeBarValue]? = nil,
         points: [BridgeScatterPoint]? = nil,
-        loopEffect: String? = nil
+        loopEffect: String? = nil,
+        loopPeriod: Double? = nil,
+        loopAmplitude: Double? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -122,9 +128,12 @@ public struct BridgeElementSnapshot: Codable, Equatable, Sendable {
         self.value = value
         self.caption = caption
         self.assetPath = assetPath
+        self.modelScale = modelScale
         self.bars = bars
         self.points = points
         self.loopEffect = loopEffect
+        self.loopPeriod = loopPeriod
+        self.loopAmplitude = loopAmplitude
     }
 }
 
@@ -177,6 +186,22 @@ public struct BridgeAssetData: Codable, Equatable, Sendable {
     }
 }
 
+public struct BridgeAssetChunk: Codable, Equatable, Sendable {
+    public var path: String
+    public var contentHash: String
+    public var totalByteCount: Int
+    public var offset: Int
+    public var data: Data
+
+    public init(path: String, contentHash: String, totalByteCount: Int, offset: Int, data: Data) {
+        self.path = path
+        self.contentHash = contentHash
+        self.totalByteCount = totalByteCount
+        self.offset = offset
+        self.data = data
+    }
+}
+
 public enum SpatialBridgePayload: Codable, Equatable, Sendable {
     case hello(BridgeHello)
     case manifest(BridgeDeckManifest)
@@ -184,6 +209,7 @@ public enum SpatialBridgePayload: Codable, Equatable, Sendable {
     case requestSnapshot
     case requestAsset(String)
     case asset(BridgeAssetData)
+    case assetChunk(BridgeAssetChunk)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -192,6 +218,7 @@ public enum SpatialBridgePayload: Codable, Equatable, Sendable {
         case snapshot
         case path
         case asset
+        case chunk
     }
 
     private enum PayloadType: String, Codable {
@@ -201,6 +228,7 @@ public enum SpatialBridgePayload: Codable, Equatable, Sendable {
         case requestSnapshot
         case requestAsset
         case asset
+        case assetChunk
     }
 
     public init(from decoder: Decoder) throws {
@@ -218,6 +246,8 @@ public enum SpatialBridgePayload: Codable, Equatable, Sendable {
             self = .requestAsset(try container.decode(String.self, forKey: .path))
         case .asset:
             self = .asset(try container.decode(BridgeAssetData.self, forKey: .asset))
+        case .assetChunk:
+            self = .assetChunk(try container.decode(BridgeAssetChunk.self, forKey: .chunk))
         }
     }
 
@@ -241,12 +271,15 @@ public enum SpatialBridgePayload: Codable, Equatable, Sendable {
         case .asset(let asset):
             try container.encode(PayloadType.asset, forKey: .type)
             try container.encode(asset, forKey: .asset)
+        case .assetChunk(let chunk):
+            try container.encode(PayloadType.assetChunk, forKey: .type)
+            try container.encode(chunk, forKey: .chunk)
         }
     }
 }
 
 public struct SpatialBridgeEnvelope: Codable, Equatable, Sendable {
-    public static let currentProtocolVersion = 1
+    public static let currentProtocolVersion = 2
 
     public var protocolVersion: Int
     public var sequence: UInt64

@@ -56,10 +56,14 @@ phoneWorldContent = phoneWorldFromShared * sharedContent
 1. Vision Pro 启动 Bonjour server。
 2. iPhone 自动发现并连接，发送 `hello` 和 `requestSnapshot`。
 3. Vision Pro 返回 deck manifest 和当前 `BridgeSlidesSnapshot`。
-4. iPhone 按当前页需要的路径请求 PNG/JPEG/USDZ。
+4. iPhone 优先请求当前页素材，同时以最多两路并发在后台预取 manifest 中的
+   USDZ；预热上限为 6 个/约 96 MB，已落盘的内容哈希缓存不会重复传输。
 5. Vision Pro 返回带 SHA-256 的素材；iPhone 校验后写入 cache。
 6. 翻页、build beat 或空间元素变换后，Vision Pro 发布新 snapshot。
-7. iPhone 保留 AR session，只替换共享根节点下的演示内容。
+7. iPhone 保留 AR session 和现有 RealityKit 实体，只增量更新发生变化的
+   transform/内容。USDZ 首次解析后保存内存模板，移动模型不会重新加载文件。
+8. `float`、`spin`、`breathe` 的类型、周期和幅度随 snapshot 同步，iPhone
+   使用逐帧增量动画复现；USDZ 自带的动画轨也会自动循环播放。
 
 素材清单只在 `PresentationModel.version` 变化，也就是更换或重载演示包时重建。
 普通翻页不会重新扫描和哈希全部文件。
@@ -83,6 +87,15 @@ phoneWorldContent = phoneWorldFromShared * sharedContent
 - 2026-07-23：Vision Pro 与 iPhone 真机测试通过。Nearby 发现与连接、
   双端箭头标定、Spatial Slides 页面重建和第三视角显示均可正常工作。
 - 当前提交是第一个可用的跨设备 Spatial Slides 第三视角基线。
+- 2026-07-23 P3：根据真机 USDZ 缺失反馈升级到协议 v2。新增模型缩放与
+  重新居中、192 KB 分块传输、发送背压、SHA-256 内容缓存、下载进度、
+  重复 snapshot 去重和指数退避重连；等待第二轮真机验收。
+- iOS 27 录制优先使用 ScreenCaptureKit 的当前应用捕获，系统不支持或启动
+  失败时回退到 ReplayKit。
+- 2026-07-23 P3.1：修复停止录制后 Photos 3302，保存前等待
+  `recordingOutputDidFinishRecording` 并校验 MP4；轮盘调整支持水平翻转，
+  且把手与轮盘使用固定局部偏移做刚体求解。USDZ 改为当前页优先、后台预取、
+  内存模板缓存和实体增量更新，避免模型变换触发重复解析；同步循环动画参数。
 
 ## 已知边界
 
@@ -90,10 +103,12 @@ phoneWorldContent = phoneWorldFromShared * sharedContent
   DOM 动画尚未跨端复现；motion mode 只同步状态标记。
 - 当前 iPhone 自动连接发现到的第一个 Spatial Slides。多演示选择器待实现。
 - 本地传输尚未加入配对码或 TLS，只适合可信局域网测试。
-- 大素材使用 JSON `Data` 传输，尚未做二进制分块、压缩和断点续传。
+- 大素材已分块并按块等待 Network.framework 确认，但 payload 仍使用 JSON
+  `Data` 编码；尚未做原生二进制帧和跨启动断点续传。
 - Vision 端运行时拖动过的 deck 主面板、轮盘和讲稿板不属于观众场景。
-- ReplayKit 在新 SDK 中已标记弃用。当前版本用于先完成可用录制闭环，
-  后续应迁移到 ScreenCaptureKit，并验证应用内 AR 画面和麦克风的输出策略。
+- ScreenCaptureKit 是 iOS 27 的主录制路径，ReplayKit 只作为旧系统或启动
+  失败时的兼容后端。短录制保存已通过真机验收，仍需验证麦克风选择、长录制
+  和系统中断恢复。
 - SharePlay 尚未接入。它适合远程参与和邀请，但同房间第三视角优先使用
   无账号门槛的 Nearby 连接。
 
@@ -103,7 +118,7 @@ phoneWorldContent = phoneWorldFromShared * sharedContent
 
 - [x] 双端连接、手动标定和页面同步基础链路。
 - [ ] 断线重连、重复标定和长时间连续翻页压力测试。
-- [ ] PNG/USDZ 首次加载延迟和缓存命中测试。
+- [ ] PNG/USDZ 分块进度、首次加载延迟和第二次进入时的缓存命中测试。
 - [ ] 标定误差、漂移以及横竖屏行为测试。
 - [ ] 录制视频中的控制 UI、音轨和长时间稳定性测试。
 

@@ -16,7 +16,6 @@ public final class LocalSpatialBridgeServer: @unchecked Sendable {
     public var onStateChange: (@Sendable (SpatialBridgeConnectionState) -> Void)?
 
     private let queue = DispatchQueue(label: "SpatialBridge.server")
-    private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
@@ -63,13 +62,36 @@ public final class LocalSpatialBridgeServer: @unchecked Sendable {
     }
 
     public func send(_ envelope: SpatialBridgeEnvelope) throws {
-        let data = try SpatialBridgeFrameDecoder.encode(encoder.encode(envelope))
+        let data = try SpatialBridgeFrameDecoder.encode(JSONEncoder().encode(envelope))
         lock.lock()
         let activeConnections = Array(connections.values)
         lock.unlock()
         for connection in activeConnections {
             connection.send(content: data, completion: .contentProcessed { _ in })
         }
+    }
+
+    public func sendAsync(_ envelope: SpatialBridgeEnvelope) async throws {
+        let data = try SpatialBridgeFrameDecoder.encode(JSONEncoder().encode(envelope))
+        let activeConnections = connectionSnapshot()
+        for connection in activeConnections {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, Error>) in
+                connection.send(content: data, completion: .contentProcessed { error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume()
+                    }
+                })
+            }
+        }
+    }
+
+    private func connectionSnapshot() -> [NWConnection] {
+        lock.lock()
+        defer { lock.unlock() }
+        return Array(connections.values)
     }
 
     private var connectionCount: Int {
@@ -137,15 +159,47 @@ public final class LocalSpatialBridgeClient: @unchecked Sendable {
     public var onStateChange: (@Sendable (SpatialBridgeConnectionState) -> Void)?
 
     private let queue = DispatchQueue(label: "SpatialBridge.client")
-    private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private var browser: NWBrowser?
     private var connection: NWConnection?
+    private var reconnectWorkItem: DispatchWorkItem?
+    private var reconnectDelay: TimeInterval = 0.75
+    private var wantsConnection = false
 
     public init() {}
 
     public func start() {
-        stop()
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.wantsConnection = true
+            self.reconnectDelay = 0.75
+            self.beginBrowsing()
+        }
+    }
+
+    public func stop() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.wantsConnection = false
+            self.reconnectWorkItem?.cancel()
+            self.reconnectWorkItem = nil
+            self.resetTransport()
+            self.onStateChange?(.stopped)
+        }
+    }
+
+    public func send(_ envelope: SpatialBridgeEnvelope) throws {
+        let data = try SpatialBridgeFrameDecoder.encode(JSONEncoder().encode(envelope))
+        queue.async { [weak self] in
+            self?.connection?.send(content: data, completion: .contentProcessed { _ in })
+        }
+    }
+
+    private func beginBrowsing() {
+        guard wantsConnection else { return }
+        reconnectWorkItem?.cancel()
+        reconnectWorkItem = nil
+        resetTransport()
         let descriptor = NWBrowser.Descriptor.bonjour(type: LocalSpatialBridgeServer.serviceType, domain: nil)
         let browser = NWBrowser(for: descriptor, using: .tcp)
         browser.stateUpdateHandler = { [weak self] state in
@@ -153,8 +207,11 @@ public final class LocalSpatialBridgeClient: @unchecked Sendable {
             switch state {
             case .failed(let error):
                 self.onStateChange?(.failed(error.localizedDescription))
+                self.scheduleReconnect()
             case .cancelled:
-                self.onStateChange?(.stopped)
+                if !self.wantsConnection {
+                    self.onStateChange?(.stopped)
+                }
             default:
                 break
             }
@@ -168,21 +225,9 @@ public final class LocalSpatialBridgeClient: @unchecked Sendable {
         browser.start(queue: queue)
     }
 
-    public func stop() {
-        browser?.cancel()
-        browser = nil
-        connection?.cancel()
-        connection = nil
-        onStateChange?(.stopped)
-    }
-
-    public func send(_ envelope: SpatialBridgeEnvelope) throws {
-        guard let connection else { return }
-        let data = try SpatialBridgeFrameDecoder.encode(encoder.encode(envelope))
-        connection.send(content: data, completion: .contentProcessed { _ in })
-    }
-
     private func connect(to endpoint: NWEndpoint) {
+        guard wantsConnection else { return }
+        browser?.stateUpdateHandler = nil
         browser?.cancel()
         browser = nil
         onStateChange?(.connecting)
@@ -190,16 +235,17 @@ public final class LocalSpatialBridgeClient: @unchecked Sendable {
         self.connection = connection
         connection.stateUpdateHandler = { [weak self, weak connection] state in
             guard let self, let connection else { return }
+            guard self.connection === connection else { return }
             switch state {
             case .ready:
+                self.reconnectDelay = 0.75
                 self.onStateChange?(.connected(peerCount: 1))
                 self.receive(on: connection, decoderState: SpatialBridgeFrameDecoder())
             case .failed(let error):
-                self.connection = nil
                 self.onStateChange?(.failed(error.localizedDescription))
-                self.start()
+                self.scheduleReconnect()
             case .cancelled:
-                self.connection = nil
+                self.scheduleReconnect()
             default:
                 break
             }
@@ -211,6 +257,7 @@ public final class LocalSpatialBridgeClient: @unchecked Sendable {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 256 * 1_024) {
             [weak self, weak connection] data, _, isComplete, error in
             guard let self, let connection else { return }
+            guard self.connection === connection else { return }
             var nextState = decoderState
             if let data, !data.isEmpty {
                 do {
@@ -219,19 +266,42 @@ public final class LocalSpatialBridgeClient: @unchecked Sendable {
                         self.onEnvelope?(envelope)
                     }
                 } catch {
-                    connection.cancel()
-                    self.connection = nil
-                    self.start()
+                    self.onStateChange?(.failed(error.localizedDescription))
+                    self.scheduleReconnect()
                     return
                 }
             }
             if isComplete || error != nil {
-                connection.cancel()
-                self.connection = nil
-                self.start()
+                self.scheduleReconnect()
             } else {
                 self.receive(on: connection, decoderState: nextState)
             }
         }
+    }
+
+    private func scheduleReconnect() {
+        guard wantsConnection, reconnectWorkItem == nil else { return }
+        connection?.stateUpdateHandler = nil
+        connection?.cancel()
+        connection = nil
+        let delay = reconnectDelay
+        reconnectDelay = min(reconnectDelay * 1.7, 5)
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.reconnectWorkItem = nil
+            self.beginBrowsing()
+        }
+        reconnectWorkItem = workItem
+        queue.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    private func resetTransport() {
+        browser?.stateUpdateHandler = nil
+        browser?.browseResultsChangedHandler = nil
+        browser?.cancel()
+        browser = nil
+        connection?.stateUpdateHandler = nil
+        connection?.cancel()
+        connection = nil
     }
 }

@@ -12,11 +12,11 @@ struct SpatialCameraView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                if !recorder.isRecording {
+                if !recorder.isRecording && !recorder.isPreparing {
                     statusBar
                 }
                 Spacer()
-                if !recorder.isRecording || recordingChromeVisible {
+                if !recorder.isPreparing && (!recorder.isRecording || recordingChromeVisible) {
                     controls
                 }
             }
@@ -45,22 +45,39 @@ struct SpatialCameraView: View {
     }
 
     private var statusBar: some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(connectionColor)
-                .frame(width: 9, height: 9)
-            Text(model.connectionLabel)
-                .font(.callout.weight(.semibold))
-                .lineLimit(1)
-            Spacer()
-            Text(model.calibrationLabel)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(model.alignmentFrame == nil ? .yellow : .green)
-                .lineLimit(1)
+        VStack(spacing: 6) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(connectionColor)
+                    .frame(width: 9, height: 9)
+                Text(model.connectionLabel)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+                Spacer()
+                Text(model.calibrationLabel)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(
+                        model.alignmentFrame == nil || model.calibrationNeedsImprovement
+                            ? .yellow
+                            : .green
+                    )
+                    .lineLimit(1)
+            }
+            if let assetStatusLabel = model.assetStatusLabel {
+                HStack(spacing: 7) {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(.white)
+                    Text(assetStatusLabel)
+                        .font(.caption2.weight(.medium))
+                    Spacer()
+                }
+                .foregroundStyle(.white.opacity(0.82))
+            }
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 14)
-        .frame(height: 44)
+        .padding(.vertical, 10)
         .background(.black.opacity(0.62), in: .rect(cornerRadius: 8))
     }
 

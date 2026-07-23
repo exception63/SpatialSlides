@@ -34,6 +34,7 @@ struct StageView: View {
             coordinator.setSpectatorMarkerVisible(spatialBridge.hasViewer)
             coordinator.manipBeginSub = content.subscribe(to: ManipulationEvents.WillBegin.self) { event in
                 if coordinator.isSpectatorAlignmentMarker(event.entity) { return }
+                if coordinator.beginCarouselAdjustment(event.entity) { return }
                 guard let (node, _) = coordinator.resolve(event.entity) else { return }
                 coordinator.setManipulating(node, true)    // freeze this node's loop while hands hold it
             }
@@ -43,6 +44,7 @@ struct StageView: View {
                     spatialBridge.publish(presentation)
                     return
                 }
+                if coordinator.finishCarouselAdjustment(event.entity) { return }
                 guard let (node, id) = coordinator.resolve(event.entity) else { return }
                 presentation.setTransform(elementID: id, position: node.position,
                                           orientation: node.orientation, scale: node.scale.x)
@@ -114,6 +116,7 @@ struct StageView: View {
             if connected { spatialBridge.publish(presentation) }
         }
         .task {
+            ExhibitBuilder.prewarmModels(in: presentation.show)
             spatialBridge.publish(presentation)
         }
     }
@@ -525,8 +528,9 @@ final class StageCoordinator {
     // gaze/pinch input dead after exiting adjust — this avoids that entirely.)
     private var carousel: Entity?
     private var adjustHandle: Entity?
-    private var carouselAnchor: SIMD3<Float> = .zero   // wheel position when adjust began
-    private var handleAnchor: SIMD3<Float> = .zero     // handle position when adjust began
+    private var carouselHandleOffset = SIMD3<Float>.zero
+    private var carouselYawAnchor: Float = 0
+    private var handleYawAnchor: Float = 0
     private var carouselOffset: Float = 0        // fractional scroll position (0 = page 0 at front)
     private var skybox: Entity?                   // dark immersive environment (full-immersion mode)
     private var dragBaseOffset: Float = 0
@@ -668,8 +672,8 @@ final class StageCoordinator {
         if carouselAdjustOn { setCarouselAdjust(true) }   // re-arm after a rebuild
     }
 
-    /// A glowing amber bar the presenter grabs to slide the whole wheel closer /
-    /// farther / aside. It carries the ManipulationComponent — the cards never do —
+    /// A glowing amber bar the presenter grabs to move or horizontally turn the
+    /// whole wheel. It carries the ManipulationComponent — the cards never do —
     /// so nothing about the cards' input changes when adjust turns off.
     private func makeAdjustHandle() -> Entity {
         var mat = PhysicallyBasedMaterial()
@@ -686,6 +690,19 @@ final class StageCoordinator {
             knob.position = [side * 0.19, 0, 0]
             bar.addChild(knob)
         }
+        let directionShaft = ModelEntity(
+            mesh: .generateBox(size: [0.025, 0.025, 0.14], cornerRadius: 0.01),
+            materials: [mat]
+        )
+        directionShaft.position.z = 0.09
+        bar.addChild(directionShaft)
+        let directionHead = ModelEntity(
+            mesh: .generateCone(height: 0.07, radius: 0.045),
+            materials: [mat]
+        )
+        directionHead.orientation = simd_quatf(angle: .pi / 2, axis: [1, 0, 0])
+        directionHead.position.z = 0.19
+        bar.addChild(directionHead)
         return bar
     }
 
@@ -698,13 +715,14 @@ final class StageCoordinator {
         carouselAdjustOn = on
         guard let handle = adjustHandle, let container = carousel else { return }
         if on {
-            handle.position = container.position + [0, Carousel.y - 0.26, -Carousel.radius + 0.02]
-            handle.orientation = StageView.facing(handle.position)
+            carouselHandleOffset = [0, Carousel.y - 0.26, -Carousel.radius + 0.02]
+            handle.position = container.position + container.orientation.act(carouselHandleOffset)
+            handle.orientation = container.orientation
             handle.isEnabled = true
             let box = ShapeResource.generateBox(size: [0.44, 0.14, 0.14])
-            enableManipulation(handle, shape: box, allowsScaling: false, allowsRotation: false)
-            carouselAnchor = container.position
-            handleAnchor = handle.position
+            enableManipulation(handle, shape: box, allowsScaling: false, allowsRotation: true)
+            carouselYawAnchor = horizontalYaw(of: container.orientation)
+            handleYawAnchor = horizontalYaw(of: handle.orientation)
         } else {
             handle.isEnabled = false
             handle.components.remove(ManipulationComponent.self)
@@ -715,11 +733,49 @@ final class StageCoordinator {
     }
 
     /// Called every frame. While adjusting, the wheel tracks the grab handle by the
-    /// same offset the handle has been dragged — so grabbing the bar slides the whole
-    /// carousel (cards + all) as one, and it stays put on release.
+    /// same translation and horizontal yaw delta as the handle. Pitch and roll are
+    /// intentionally discarded so every card remains upright after a 180-degree flip.
     func tickCarouselAdjust() {
         guard carouselAdjustOn, let handle = adjustHandle, let container = carousel else { return }
-        container.position = carouselAnchor + (handle.position - handleAnchor)
+        let yawDelta = normalizedAngle(horizontalYaw(of: handle.orientation) - handleYawAnchor)
+        container.orientation = simd_quatf(
+            angle: carouselYawAnchor + yawDelta,
+            axis: [0, 1, 0]
+        )
+        container.position = handle.position - container.orientation.act(carouselHandleOffset)
+    }
+
+    func beginCarouselAdjustment(_ entity: Entity) -> Bool {
+        guard carouselAdjustOn,
+              ancestor(of: entity, matching: adjustHandle) != nil,
+              let handle = adjustHandle,
+              let container = carousel else { return false }
+        carouselYawAnchor = horizontalYaw(of: container.orientation)
+        handleYawAnchor = horizontalYaw(of: handle.orientation)
+        return true
+    }
+
+    func finishCarouselAdjustment(_ entity: Entity) -> Bool {
+        guard carouselAdjustOn,
+              ancestor(of: entity, matching: adjustHandle) != nil,
+              let handle = adjustHandle,
+              let container = carousel else { return false }
+        tickCarouselAdjust()
+        handle.orientation = container.orientation
+        handle.position = container.position + container.orientation.act(carouselHandleOffset)
+        carouselYawAnchor = horizontalYaw(of: container.orientation)
+        handleYawAnchor = horizontalYaw(of: handle.orientation)
+        return true
+    }
+
+    private func horizontalYaw(of orientation: simd_quatf) -> Float {
+        let forward = orientation.act(SIMD3<Float>(0, 0, 1))
+        guard abs(forward.x) > 0.0001 || abs(forward.z) > 0.0001 else { return 0 }
+        return atan2(forward.x, forward.z)
+    }
+
+    private func normalizedAngle(_ angle: Float) -> Float {
+        atan2(sin(angle), cos(angle))
     }
 
     func tick(deltaTime: TimeInterval) {

@@ -1,3 +1,4 @@
+import Combine
 import RealityKit
 import SpatialBridgeKit
 import UIKit
@@ -11,7 +12,25 @@ final class SpatialSlidesARSceneRenderer {
     private var renderedSceneRevision = -1
     private var renderedAlignmentRevision = -1
     private var renderedFixtureVisibility = true
-    private var renderGeneration = 0
+    private var deckEntity: ModelEntity?
+    private var deckAssetPath: String?
+    private var deckAssetURL: URL?
+    private var deckLoadToken = UUID()
+    private var elementEntities: [String: Entity] = [:]
+    private var elementSnapshots: [String: BridgeElementSnapshot] = [:]
+    private var elementAssetURLs: [String: URL] = [:]
+    private var elementLoadTokens: [String: UUID] = [:]
+    private var modelTemplates: [URL: Entity] = [:]
+    private var modelLoadTasks: [URL: Task<Entity, Error>] = [:]
+    private var loopStates: [String: LoopState] = [:]
+    private var updateSubscription: (any Cancellable)?
+
+    private struct LoopState {
+        let effect: String
+        let omega: Double
+        let amplitude: Float
+        var phase: Double = 0
+    }
 
     func attach(to arView: ARView) {
         guard worldAnchor.parent == nil else { return }
@@ -19,6 +38,9 @@ final class SpatialSlidesARSceneRenderer {
         sharedRoot.addChild(contentRoot)
         worldAnchor.addChild(alignmentRoot)
         arView.scene.addAnchor(worldAnchor)
+        updateSubscription = arView.scene.subscribe(to: SceneEvents.Update.self) { [weak self] event in
+            self?.tickLoops(deltaTime: event.deltaTime)
+        }
     }
 
     func update(
@@ -27,6 +49,8 @@ final class SpatialSlidesARSceneRenderer {
         calibrationOrigin: SIMD3<Float>?,
         showAlignmentFixture: Bool,
         assetURL: (String) -> URL?,
+        modelAssetURLs: [URL],
+        reportRenderIssue: @escaping (String) -> Void,
         sceneRevision: Int,
         alignmentRevision: Int
     ) {
@@ -52,35 +76,129 @@ final class SpatialSlidesARSceneRenderer {
             }
         }
 
+        prewarmModels(at: modelAssetURLs)
         guard renderedSceneRevision != sceneRevision else { return }
         renderedSceneRevision = sceneRevision
-        renderGeneration += 1
-        let generation = renderGeneration
-        contentRoot.children.removeAll()
-        guard let snapshot else { return }
+        guard let snapshot else {
+            clearContent()
+            return
+        }
+        reconcileDeck(snapshot: snapshot, assetURL: assetURL)
+        reconcileElements(
+            snapshot.elements,
+            assetURL: assetURL,
+            reportRenderIssue: reportRenderIssue
+        )
+    }
 
-        if let path = snapshot.slideAssetPath, let url = assetURL(path) {
-            let deck = ModelEntity(
+    private func reconcileDeck(
+        snapshot: BridgeSlidesSnapshot,
+        assetURL: (String) -> URL?
+    ) {
+        guard let path = snapshot.slideAssetPath else {
+            deckLoadToken = UUID()
+            deckEntity?.removeFromParent()
+            deckEntity = nil
+            deckAssetPath = nil
+            deckAssetURL = nil
+            return
+        }
+
+        let deck: ModelEntity
+        if let existing = deckEntity {
+            deck = existing
+        } else {
+            deck = ModelEntity(
                 mesh: .generatePlane(width: 2.6, height: 1.4625, cornerRadius: 0.02),
                 materials: [UnlitMaterial(color: .black)]
             )
-            deck.transform.matrix = snapshot.deckTransform.matrix
             contentRoot.addChild(deck)
-            Task { @MainActor [weak deck] in
-                guard let texture = try? await TextureResource(contentsOf: url),
-                      generation == self.renderGeneration,
-                      let deck else { return }
-                var material = UnlitMaterial()
-                material.color = .init(tint: .white, texture: .init(texture))
-                deck.model?.materials = [material]
-            }
+            deckEntity = deck
+        }
+        deck.transform.matrix = snapshot.deckTransform.matrix
+
+        let url = assetURL(path)
+        guard deckAssetPath != path || deckAssetURL != url else { return }
+        deckAssetPath = path
+        deckAssetURL = url
+        deck.model?.materials = [UnlitMaterial(color: .black)]
+        deckLoadToken = UUID()
+        let token = deckLoadToken
+        guard let url else { return }
+        Task { @MainActor [weak deck] in
+            guard let texture = try? await TextureResource(contentsOf: url),
+                  token == self.deckLoadToken,
+                  let deck else { return }
+            var material = UnlitMaterial()
+            material.color = .init(tint: .white, texture: .init(texture))
+            deck.model?.materials = [material]
+        }
+    }
+
+    private func reconcileElements(
+        _ elements: [BridgeElementSnapshot],
+        assetURL: (String) -> URL?,
+        reportRenderIssue: @escaping (String) -> Void
+    ) {
+        let visibleElements = elements.filter(\.visible)
+        let visibleIDs = Set(visibleElements.map(\.id))
+        for id in Array(elementEntities.keys) where !visibleIDs.contains(id) {
+            removeElement(id)
         }
 
-        for element in snapshot.elements where element.visible {
-            let entity = makeElement(element, assetURL: assetURL, generation: generation)
+        for element in visibleElements {
+            let url = element.assetPath.flatMap(assetURL)
+            let existingURL = elementAssetURLs[element.id]
+            let shouldRebuild: Bool
+            if let previous = elementSnapshots[element.id] {
+                var definition = previous
+                definition.transform = element.transform
+                shouldRebuild = definition != element || existingURL != url
+            } else {
+                shouldRebuild = true
+            }
+
+            let entity: Entity
+            if shouldRebuild {
+                removeElement(element.id)
+                entity = makeElement(
+                    element,
+                    resolvedAssetURL: url,
+                    reportRenderIssue: reportRenderIssue
+                )
+                contentRoot.addChild(entity)
+                elementEntities[element.id] = entity
+                if let url { elementAssetURLs[element.id] = url }
+                configureLoop(for: element)
+            } else if let existing = elementEntities[element.id] {
+                entity = existing
+            } else {
+                continue
+            }
+
+            elementSnapshots[element.id] = element
             entity.transform.matrix = element.transform.matrix
-            contentRoot.addChild(entity)
+            applyCurrentLoopPose(to: entity, id: element.id)
         }
+    }
+
+    private func clearContent() {
+        deckLoadToken = UUID()
+        deckEntity?.removeFromParent()
+        deckEntity = nil
+        deckAssetPath = nil
+        deckAssetURL = nil
+        for id in Array(elementEntities.keys) {
+            removeElement(id)
+        }
+    }
+
+    private func removeElement(_ id: String) {
+        elementLoadTokens[id] = UUID()
+        elementEntities.removeValue(forKey: id)?.removeFromParent()
+        elementSnapshots.removeValue(forKey: id)
+        elementAssetURLs.removeValue(forKey: id)
+        loopStates.removeValue(forKey: id)
     }
 
     private func installAlignmentFixture() {
@@ -113,20 +231,36 @@ final class SpatialSlidesARSceneRenderer {
 
     private func makeElement(
         _ element: BridgeElementSnapshot,
-        assetURL: (String) -> URL?,
-        generation: Int
+        resolvedAssetURL: URL?,
+        reportRenderIssue: @escaping (String) -> Void
     ) -> Entity {
         switch element.kind {
         case "model":
             let root = Entity()
             root.addChild(Self.placeholder())
-            if let path = element.assetPath, let url = assetURL(path) {
+            if let path = element.assetPath, let url = resolvedAssetURL {
+                let token = UUID()
+                elementLoadTokens[element.id] = token
                 Task { @MainActor [weak root] in
-                    guard let loaded = try? await Entity(contentsOf: url),
-                          generation == self.renderGeneration,
-                          let root else { return }
-                    root.children.removeAll()
-                    root.addChild(loaded)
+                    do {
+                        let loaded = try await self.cachedModelInstance(contentsOf: url)
+                        guard self.elementLoadTokens[element.id] == token,
+                              let root,
+                              root.parent != nil else { return }
+                        let scale = element.modelScale ?? 1
+                        loaded.scale = [scale, scale, scale]
+                        root.children.removeAll()
+                        root.addChild(loaded)
+                        await Task.yield()
+                        let bounds = loaded.visualBounds(relativeTo: root)
+                        loaded.position -= bounds.center
+                        for animation in loaded.availableAnimations {
+                            loaded.playAnimation(animation.repeat())
+                        }
+                    } catch {
+                        guard self.elementLoadTokens[element.id] == token else { return }
+                        reportRenderIssue("USDZ 加载失败：\(path)\n\(error.localizedDescription)")
+                    }
                 }
             }
             return root
@@ -136,6 +270,100 @@ final class SpatialSlidesARSceneRenderer {
             return makeScatter(element.points ?? [])
         default:
             return makePanel(element)
+        }
+    }
+
+    private func cachedModelInstance(contentsOf url: URL) async throws -> Entity {
+        if let template = modelTemplates[url] {
+            return template.clone(recursive: true)
+        }
+        if let task = modelLoadTasks[url] {
+            let template = try await task.value
+            return template.clone(recursive: true)
+        }
+
+        let task = Task { @MainActor in
+            try await Entity(contentsOf: url)
+        }
+        modelLoadTasks[url] = task
+        do {
+            let template = try await task.value
+            modelLoadTasks.removeValue(forKey: url)
+            modelTemplates[url] = template
+            return template.clone(recursive: true)
+        } catch {
+            modelLoadTasks.removeValue(forKey: url)
+            throw error
+        }
+    }
+
+    private func prewarmModels(at urls: [URL]) {
+        for url in urls where modelTemplates[url] == nil && modelLoadTasks[url] == nil {
+            Task { @MainActor in
+                _ = try? await cachedModelInstance(contentsOf: url)
+            }
+        }
+    }
+
+    private func configureLoop(for element: BridgeElementSnapshot) {
+        guard let effect = element.loopEffect, effect != "none" else {
+            loopStates.removeValue(forKey: element.id)
+            return
+        }
+        let period = max(element.loopPeriod ?? 6, 0.4)
+        loopStates[element.id] = LoopState(
+            effect: effect,
+            omega: 2 * .pi / period,
+            amplitude: Float(max(element.loopAmplitude ?? 1, 0))
+        )
+    }
+
+    private func applyCurrentLoopPose(to entity: Entity, id: String) {
+        guard let loop = loopStates[id] else { return }
+        let wave = Float(sin(loop.omega * loop.phase))
+        switch loop.effect {
+        case "spin":
+            entity.orientation = simd_quatf(
+                angle: Float(loop.omega * loop.phase),
+                axis: [0, 1, 0]
+            ) * entity.orientation
+        case "float":
+            entity.position.y += (loop.amplitude <= 0 ? 1 : loop.amplitude) * 0.03 * wave
+        case "breathe":
+            entity.scale *= 1 + (loop.amplitude <= 0 ? 1 : loop.amplitude) * 0.04 * wave
+        default:
+            break
+        }
+    }
+
+    private func tickLoops(deltaTime: TimeInterval) {
+        guard deltaTime > 0 else { return }
+        for id in Array(loopStates.keys) {
+            guard var loop = loopStates[id],
+                  let entity = elementEntities[id],
+                  entity.isEnabled else { continue }
+            let previousPhase = loop.phase
+            loop.phase += deltaTime
+            loopStates[id] = loop
+
+            let previousWave = Float(sin(loop.omega * previousPhase))
+            let currentWave = Float(sin(loop.omega * loop.phase))
+            let amplitude = loop.amplitude <= 0 ? 1 : loop.amplitude
+            switch loop.effect {
+            case "spin":
+                entity.orientation = simd_quatf(
+                    angle: Float(loop.omega * deltaTime),
+                    axis: [0, 1, 0]
+                ) * entity.orientation
+            case "float":
+                entity.position.y += amplitude * 0.03 * (currentWave - previousWave)
+            case "breathe":
+                let previousScale = 1 + amplitude * 0.04 * previousWave
+                let currentScale = 1 + amplitude * 0.04 * currentWave
+                entity.scale *= currentScale / previousScale
+            default:
+                break
+            }
         }
     }
 

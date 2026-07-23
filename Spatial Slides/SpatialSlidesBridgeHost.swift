@@ -17,6 +17,7 @@ final class SpatialSlidesBridgeHost: @unchecked Sendable {
     private var latestSnapshot: BridgeSlidesSnapshot?
     private var latestManifest: BridgeDeckManifest?
     private var latestManifestVersion: Int?
+    private var assetTransferIDs: [String: UUID] = [:]
     private var stageFromShared = simd_float4x4(
         SIMD4<Float>(1, 0, 0, 0),
         SIMD4<Float>(0, 1, 0, 0),
@@ -106,7 +107,7 @@ final class SpatialSlidesBridgeHost: @unchecked Sendable {
             if let latestSnapshot { send(.slidesSnapshot(latestSnapshot)) }
         case .requestAsset(let path):
             sendAsset(path)
-        case .manifest, .slidesSnapshot, .asset:
+        case .manifest, .slidesSnapshot, .asset, .assetChunk:
             break
         }
     }
@@ -131,6 +132,7 @@ final class SpatialSlidesBridgeHost: @unchecked Sendable {
                 value: element.value,
                 caption: element.caption,
                 assetPath: element.asset,
+                modelScale: element.kind == .model ? element.modelScale : nil,
                 bars: element.bars?.map {
                     BridgeBarValue(label: $0.label, value: $0.value, colorHex: $0.colorHex)
                 },
@@ -143,7 +145,9 @@ final class SpatialSlidesBridgeHost: @unchecked Sendable {
                         colorHex: $0.colorHex
                     )
                 },
-                loopEffect: element.animation?.loop?.effect.rawValue
+                loopEffect: element.animation?.loop?.effect.rawValue,
+                loopPeriod: element.animation?.loop?.period,
+                loopAmplitude: element.animation?.loop?.amplitude
             )
         }
 
@@ -187,22 +191,65 @@ final class SpatialSlidesBridgeHost: @unchecked Sendable {
     private func sendAsset(_ path: String) {
         guard !path.hasPrefix("/"),
               !path.split(separator: "/").contains(".."),
-              let url = DeckLoader.assetURL(path),
-              let data = try? Data(contentsOf: url, options: .mappedIfSafe)
+              let url = DeckLoader.assetURL(path)
         else { return }
-        send(.asset(BridgeAssetData(
-            path: path,
-            contentHash: BridgeHash.sha256(data),
-            data: data
-        )))
+
+        let server = server
+        let transferID = UUID()
+        assetTransferIDs[path] = transferID
+        Task.detached(priority: .userInitiated) { [weak self] in
+            do {
+                let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                let contentHash = BridgeHash.sha256(data)
+                let chunkSize = 192 * 1_024
+                var offset = 0
+
+                while offset < data.count {
+                    guard await self?.isCurrentTransfer(transferID, for: path) == true else { return }
+                    let end = min(offset + chunkSize, data.count)
+                    let chunk = BridgeAssetChunk(
+                        path: path,
+                        contentHash: contentHash,
+                        totalByteCount: data.count,
+                        offset: offset,
+                        data: Data(data[offset..<end])
+                    )
+                    guard let envelope = await self?.makeEnvelope(.assetChunk(chunk)) else { return }
+                    try await server.sendAsync(envelope)
+                    offset = end
+                }
+                await self?.finishTransfer(transferID, for: path)
+            } catch {
+                await self?.finishTransfer(transferID, for: path)
+                await self?.record(error)
+            }
+        }
     }
 
     private func send(_ payload: SpatialBridgePayload) {
-        sequence += 1
         do {
-            try server.send(SpatialBridgeEnvelope(sequence: sequence, payload: payload))
+            try server.send(makeEnvelope(payload))
         } catch {
             lastError = error.localizedDescription
+        }
+    }
+
+    private func makeEnvelope(_ payload: SpatialBridgePayload) -> SpatialBridgeEnvelope {
+        sequence += 1
+        return SpatialBridgeEnvelope(sequence: sequence, payload: payload)
+    }
+
+    private func record(_ error: Error) {
+        lastError = error.localizedDescription
+    }
+
+    private func isCurrentTransfer(_ transferID: UUID, for path: String) -> Bool {
+        assetTransferIDs[path] == transferID
+    }
+
+    private func finishTransfer(_ transferID: UUID, for path: String) {
+        if assetTransferIDs[path] == transferID {
+            assetTransferIDs.removeValue(forKey: path)
         }
     }
 

@@ -11,8 +11,11 @@ import RealityKit
 import UIKit
 import SwiftUI
 
+@MainActor
 enum ExhibitBuilder {
     typealias ModelReadyHandler = @MainActor (_ node: Entity, _ shape: ShapeResource, _ halfExtent: SIMD2<Float>) -> Void
+    private static var modelTemplates: [URL: Entity] = [:]
+    private static var modelLoadTasks: [URL: Task<Entity, Error>] = [:]
 
     static func build(_ element: ExhibitElement, onModelReady: ModelReadyHandler? = nil) -> Entity {
         switch element.kind {
@@ -40,12 +43,12 @@ enum ExhibitBuilder {
         Task { @MainActor in
             var loaded: Entity?
             if let asset = element.asset, let url = DeckLoader.assetURL(asset) {
-                loaded = try? await Entity(contentsOf: url)
+                loaded = try? await cachedModelInstance(contentsOf: url)
             }
             if loaded == nil, let name = element.modelName {
                 loaded = try? await Entity(named: name)
             }
-            guard let model = loaded else { return }
+            guard let model = loaded, node.parent != nil else { return }
             model.scale = [scale, scale, scale]
 
             // Two-handed pinch-scale only ENGAGES when BOTH hands' pinches land on the
@@ -59,6 +62,9 @@ enum ExhibitBuilder {
             Self.stripInteraction(model)
             placeholder.removeFromParent()
             node.addChild(model)
+            for animation in model.availableAnimations {
+                model.playAnimation(animation.repeat())
+            }
             await Task.yield()   // let the freshly-loaded mesh's bounds settle
 
             // Re-center the model on node's origin, then use a CENTERED (un-offset)
@@ -74,6 +80,47 @@ enum ExhibitBuilder {
             onModelReady?(node, shape, [hitSize.x / 2, hitSize.y / 2])
         }
         return node
+    }
+
+    static func prewarmModels(in show: Show) {
+        let paths = Set(
+            show.pages
+                .flatMap(\.elements)
+                .filter { $0.kind == .model }
+                .compactMap(\.asset)
+        )
+        for path in paths.sorted().prefix(6) {
+            guard let url = DeckLoader.assetURL(path),
+                  modelTemplates[url] == nil,
+                  modelLoadTasks[url] == nil else { continue }
+            Task { @MainActor in
+                _ = try? await cachedModelInstance(contentsOf: url)
+            }
+        }
+    }
+
+    private static func cachedModelInstance(contentsOf url: URL) async throws -> Entity {
+        if let template = modelTemplates[url] {
+            return template.clone(recursive: true)
+        }
+        if let task = modelLoadTasks[url] {
+            let template = try await task.value
+            return template.clone(recursive: true)
+        }
+
+        let task = Task { @MainActor in
+            try await Entity(contentsOf: url)
+        }
+        modelLoadTasks[url] = task
+        do {
+            let template = try await task.value
+            modelLoadTasks.removeValue(forKey: url)
+            modelTemplates[url] = template
+            return template.clone(recursive: true)
+        } catch {
+            modelLoadTasks.removeValue(forKey: url)
+            throw error
+        }
     }
 
     /// Recursively removes collision + input from a loaded model's subtree so only the
