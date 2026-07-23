@@ -96,6 +96,11 @@ phoneWorldContent = phoneWorldFromShared * sharedContent
   `recordingOutputDidFinishRecording` 并校验 MP4；轮盘调整支持水平翻转，
   且把手与轮盘使用固定局部偏移做刚体求解。USDZ 改为当前页优先、后台预取、
   内存模板缓存和实体增量更新，避免模型变换触发重复解析；同步循环动画参数。
+- 2026-07-23 P3.2：协议升级到 v3，新增独立的 `deckTransform` 消息。Vision Pro
+  在主 Slides 面板被移动、旋转或缩放时，以 20 Hz 节流发送完整变换矩阵，
+  松手时强制发送最终状态；iPhone 增量更新已有面板，不重建页面或 USDZ。
+  iPhone AR 会话优先开启 `personSegmentationWithDepth`，不支持时降级到
+  `personSegmentation`，让真实人物在第三视角与 Slides 重叠时正确遮挡虚拟内容。
 
 ## 已知边界
 
@@ -105,7 +110,10 @@ phoneWorldContent = phoneWorldFromShared * sharedContent
 - 本地传输尚未加入配对码或 TLS，只适合可信局域网测试。
 - 大素材已分块并按块等待 Network.framework 确认，但 payload 仍使用 JSON
   `Data` 编码；尚未做原生二进制帧和跨启动断点续传。
-- Vision 端运行时拖动过的 deck 主面板、轮盘和讲稿板不属于观众场景。
+- Vision 端主 Slides 面板的运行时移动、旋转和缩放已实时同步；轮盘、讲稿板
+  和参考板仍是演讲者私有操作界面，不属于 iPhone 观众场景。
+- 人物遮挡依赖 ARKit 的人物分割能力，头发、手指边缘、快速运动和弱光下可能
+  出现短暂边缘误差。当前只解决真人遮挡，家具等普通实物尚未启用网格遮挡。
 - ScreenCaptureKit 是 iOS 27 的主录制路径，ReplayKit 只作为旧系统或启动
   失败时的兼容后端。短录制保存已通过真机验收，仍需验证麦克风选择、长录制
   和系统中断恢复。
@@ -125,7 +133,9 @@ phoneWorldContent = phoneWorldFromShared * sharedContent
 ### P3 视觉保真
 
 - 复用 Spatial Slides 的元素材质和布局规则，而不是 iPhone 端近似重绘。
-- 同步运行时 deck/entity 变换。
+- [x] 同步运行时 deck 主屏变换。
+- [x] iPhone 端人物深度遮挡。
+- 同步需要进入观众场景的其他运行时 entity 变换。
 - 为可复现的 HTML build 动画定义语义动画事件。
 
 ### P4 通用 Spatial Camera

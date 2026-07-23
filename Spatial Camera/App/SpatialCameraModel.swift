@@ -209,6 +209,13 @@ final class SpatialCameraModel: @unchecked Sendable {
             }
             requestMissingAssets(for: snapshot)
             enqueueAssets(modelPrefetchPaths, priority: false)
+        case .deckTransform(let update):
+            guard var snapshot = self.snapshot, snapshot.showID == update.showID else { break }
+            if snapshot.deckTransform != update.transform {
+                snapshot.deckTransform = update.transform
+                self.snapshot = snapshot
+                sceneRevision += 1
+            }
         case .asset(let asset):
             store(asset)
         case .assetChunk(let chunk):

@@ -35,6 +35,7 @@ struct StageView: View {
             coordinator.manipBeginSub = content.subscribe(to: ManipulationEvents.WillBegin.self) { event in
                 if coordinator.isSpectatorAlignmentMarker(event.entity) { return }
                 if coordinator.beginCarouselAdjustment(event.entity) { return }
+                if coordinator.beginDeckManipulation(event.entity) { return }
                 guard let (node, _) = coordinator.resolve(event.entity) else { return }
                 coordinator.setManipulating(node, true)    // freeze this node's loop while hands hold it
             }
@@ -45,6 +46,14 @@ struct StageView: View {
                     return
                 }
                 if coordinator.finishCarouselAdjustment(event.entity) { return }
+                if let transform = coordinator.finishDeckManipulation(event.entity) {
+                    spatialBridge.updateDeckTransform(
+                        transform,
+                        presentation: presentation,
+                        force: true
+                    )
+                    return
+                }
                 guard let (node, id) = coordinator.resolve(event.entity) else { return }
                 presentation.setTransform(elementID: id, position: node.position,
                                           orientation: node.orientation, scale: node.scale.x)
@@ -61,6 +70,9 @@ struct StageView: View {
             // mirror the grab handle's motion onto the whole wheel.
             coordinator.updateSub = content.subscribe(to: SceneEvents.Update.self) { event in
                 coordinator.tick(deltaTime: event.deltaTime)
+                if let transform = coordinator.liveDeckTransform {
+                    spatialBridge.updateDeckTransform(transform, presentation: presentation)
+                }
             }
         } update: { _, attachments in
             reconcile(attachments: attachments)
@@ -100,7 +112,16 @@ struct StageView: View {
             coordinator.revealBeat(beat)   // #4: presenter advanced the attention timeline
             spatialBridge.publish(presentation)
         }
-        .onChange(of: presentation.deckScaleNonce) { _, _ in coordinator.scaleDeckPanel(presentation.deckScaleFactor) }
+        .onChange(of: presentation.deckScaleNonce) { _, _ in
+            coordinator.scaleDeckPanel(presentation.deckScaleFactor)
+            if let transform = coordinator.deckTransform {
+                spatialBridge.updateDeckTransform(
+                    transform,
+                    presentation: presentation,
+                    force: true
+                )
+            }
+        }
         .onChange(of: presentation.transcriptBoardNonce) { _, _ in
             coordinator.adjustTranscriptBoard(scale: presentation.transcriptBoardScaleFactor, yaw: presentation.transcriptBoardYaw)
         }
@@ -217,6 +238,11 @@ struct StageView: View {
             coordinator.root.addChild(deck)
             coordinator.deckPanel = deck
             coordinator.installStaticFarPanel()      // #1: the static hi-res alternative panel
+            spatialBridge.updateDeckTransform(
+                deck.transform.matrix,
+                presentation: presentation,
+                force: true
+            )
             // Movable/resizable only in edit ("摆放空间元素") mode — locked while presenting.
         }
         if coordinator.transcriptPanel == nil, let tx = attachments.entity(for: Self.transcriptWebID) {
@@ -565,6 +591,7 @@ final class StageCoordinator {
     // manipulation without fighting it.
     private var loopers: [Looper] = []
     private var manipulatingNodes: Set<ObjectIdentifier> = []
+    private var deckManipulating = false
 
     // MARK: Backdrop (tap empty → next)
 
@@ -619,6 +646,27 @@ final class StageCoordinator {
 
     func isSpectatorAlignmentMarker(_ entity: Entity) -> Bool {
         ancestor(of: entity, matching: spectatorAlignmentMarker) != nil
+    }
+
+    var deckTransform: simd_float4x4? {
+        deckPanel?.transform.matrix
+    }
+
+    var liveDeckTransform: simd_float4x4? {
+        deckManipulating ? deckTransform : nil
+    }
+
+    func beginDeckManipulation(_ entity: Entity) -> Bool {
+        guard ancestor(of: entity, matching: deckPanel) != nil else { return false }
+        deckManipulating = true
+        return true
+    }
+
+    func finishDeckManipulation(_ entity: Entity) -> simd_float4x4? {
+        guard ancestor(of: entity, matching: deckPanel) != nil else { return nil }
+        deckManipulating = false
+        syncStaticDeckTransform()
+        return deckTransform
     }
 
     func finishSpectatorAlignmentMarkerManipulation(_ entity: Entity) -> simd_float4x4? {
@@ -782,6 +830,7 @@ final class StageCoordinator {
         tickCarouselAdjust()
         tickCarouselAnimation(deltaTime: deltaTime)
         tickLoops(deltaTime: deltaTime)
+        syncStaticDeckTransform()
     }
 
     @discardableResult
@@ -987,6 +1036,12 @@ final class StageCoordinator {
         staticDeckPanel = plane
     }
 
+    private func syncStaticDeckTransform() {
+        guard let web = deckPanel, let plane = staticDeckPanel else { return }
+        plane.transform = web.transform
+        plane.position += web.orientation.act([0, 0, 0.01])
+    }
+
     /// #1 static far panel. In perf mode (motion off, not editing) with a hi-res slide
     /// image available, show a crisp static texture and disable the live WKWebView —
     /// constant cost, no per-slide rasterization of a heavy DOM. Otherwise the WKWebView.
@@ -997,8 +1052,7 @@ final class StageCoordinator {
             web.isEnabled = true
             return
         }
-        plane.transform = web.transform
-        plane.position.z += 0.01
+        syncStaticDeckTransform()
         Task { @MainActor in
             guard let tex = try? await TextureResource(contentsOf: url) else { return }
             var mat = UnlitMaterial()

@@ -18,6 +18,10 @@ final class SpatialSlidesBridgeHost: @unchecked Sendable {
     private var latestManifest: BridgeDeckManifest?
     private var latestManifestVersion: Int?
     private var assetTransferIDs: [String: UUID] = [:]
+    private var runtimeDeckTransformInStage: simd_float4x4?
+    private var lastSentDeckTransformInStage: simd_float4x4?
+    private var lastDeckTransformSentAt: TimeInterval = 0
+    private let deckTransformSendInterval: TimeInterval = 1.0 / 20.0
     private var stageFromShared = simd_float4x4(
         SIMD4<Float>(1, 0, 0, 0),
         SIMD4<Float>(0, 1, 0, 0),
@@ -96,6 +100,35 @@ final class SpatialSlidesBridgeHost: @unchecked Sendable {
         self.stageFromShared = stageFromShared
     }
 
+    func updateDeckTransform(
+        _ stageTransform: simd_float4x4,
+        presentation: PresentationModel,
+        force: Bool = false
+    ) {
+        guard presentation.hasContent else { return }
+        runtimeDeckTransformInStage = stageTransform
+
+        let update = BridgeDeckTransformUpdate(
+            showID: showID(presentation.show),
+            transform: BridgeTransform(matrix: simd_inverse(stageFromShared) * stageTransform)
+        )
+        if var snapshot = latestSnapshot, snapshot.showID == update.showID {
+            snapshot.deckTransform = update.transform
+            latestSnapshot = snapshot
+        }
+
+        let changed = lastSentDeckTransformInStage.map {
+            !matricesApproximatelyEqual($0, stageTransform)
+        } ?? true
+        guard hasViewer, changed else { return }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        guard force || now - lastDeckTransformSentAt >= deckTransformSendInterval else { return }
+        lastSentDeckTransformInStage = stageTransform
+        lastDeckTransformSentAt = now
+        send(.deckTransform(update))
+    }
+
     private func receive(_ envelope: SpatialBridgeEnvelope) {
         guard envelope.protocolVersion == SpatialBridgeEnvelope.currentProtocolVersion else { return }
         switch envelope.payload {
@@ -107,14 +140,15 @@ final class SpatialSlidesBridgeHost: @unchecked Sendable {
             if let latestSnapshot { send(.slidesSnapshot(latestSnapshot)) }
         case .requestAsset(let path):
             sendAsset(path)
-        case .manifest, .slidesSnapshot, .asset, .assetChunk:
+        case .manifest, .slidesSnapshot, .deckTransform, .asset, .assetChunk:
             break
         }
     }
 
     private func makeSnapshot(_ presentation: PresentationModel) -> BridgeSlidesSnapshot {
         let sharedFromStage = simd_inverse(stageFromShared)
-        let deckMatrix = sharedFromStage * translationMatrix([0, 1.62, -3.0])
+        let deckMatrix = sharedFromStage
+            * (runtimeDeckTransformInStage ?? translationMatrix([0, 1.62, -3.0]))
         let elements = presentation.currentElements.map { element -> BridgeElementSnapshot in
             let authored = element.transform ?? ElementTransform(position: [0, 1.2, -0.5])
             let localMatrix = transformMatrix(authored)
@@ -274,5 +308,18 @@ final class SpatialSlidesBridgeHost: @unchecked Sendable {
         matrix.columns.2 *= transform.scale
         matrix.columns.3 = [transform.position.x, transform.position.y, transform.position.z, 1]
         return matrix
+    }
+
+    private func matricesApproximatelyEqual(
+        _ lhs: simd_float4x4,
+        _ rhs: simd_float4x4,
+        tolerance: Float = 0.0005
+    ) -> Bool {
+        for column in 0..<4 {
+            for row in 0..<4 where abs(lhs[column][row] - rhs[column][row]) > tolerance {
+                return false
+            }
+        }
+        return true
     }
 }

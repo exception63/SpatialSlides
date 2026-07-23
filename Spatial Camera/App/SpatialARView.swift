@@ -17,8 +17,14 @@ struct SpatialARView: UIViewRepresentable {
         let configuration = ARWorldTrackingConfiguration()
         configuration.planeDetection = [.horizontal, .vertical]
         configuration.environmentTexturing = .automatic
+        if ARWorldTrackingConfiguration.supportsFrameSemantics(.personSegmentationWithDepth) {
+            configuration.frameSemantics.insert(.personSegmentationWithDepth)
+        } else if ARWorldTrackingConfiguration.supportsFrameSemantics(.personSegmentation) {
+            configuration.frameSemantics.insert(.personSegmentation)
+        }
         view.session.run(configuration)
         view.renderOptions.insert(.disableMotionBlur)
+        view.renderOptions.remove(.disablePersonOcclusion)
 
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         view.addGestureRecognizer(tap)

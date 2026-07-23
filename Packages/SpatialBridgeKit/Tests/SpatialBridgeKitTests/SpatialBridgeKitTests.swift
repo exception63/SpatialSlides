@@ -50,6 +50,27 @@ struct SpatialBridgeKitTests {
     }
 
     @Test
+    func deckTransformUpdateRoundTrip() throws {
+        var matrix = matrix_identity_float4x4
+        matrix.columns.0.x = 1.4
+        matrix.columns.1.y = 1.4
+        matrix.columns.2.z = 1.4
+        matrix.columns.3 = [0.8, 1.9, -2.4, 1]
+        let original = SpatialBridgeEnvelope(
+            sequence: 43,
+            payload: .deckTransform(
+                BridgeDeckTransformUpdate(
+                    showID: "demo",
+                    transform: BridgeTransform(matrix: matrix)
+                )
+            )
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(SpatialBridgeEnvelope.self, from: data)
+        #expect(decoded == original)
+    }
+
+    @Test
     func framingHandlesPartialAndAdjacentFrames() throws {
         let first = try SpatialBridgeFrameDecoder.encode(Data("one".utf8))
         let second = try SpatialBridgeFrameDecoder.encode(Data("two".utf8))
