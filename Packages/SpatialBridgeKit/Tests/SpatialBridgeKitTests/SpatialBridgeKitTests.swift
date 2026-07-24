@@ -71,6 +71,27 @@ struct SpatialBridgeKitTests {
     }
 
     @Test
+    func elementTransformUpdateRoundTrip() throws {
+        var matrix = matrix_identity_float4x4
+        matrix.columns.3 = [-0.4, 1.25, -1.1, 1]
+        let original = SpatialBridgeEnvelope(
+            sequence: 44,
+            payload: .elementTransform(
+                BridgeElementTransformUpdate(
+                    showID: "demo",
+                    page: 2,
+                    elementID: "bear-model",
+                    transform: BridgeTransform(matrix: matrix),
+                    isManipulating: true
+                )
+            )
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(SpatialBridgeEnvelope.self, from: data)
+        #expect(decoded == original)
+    }
+
+    @Test
     func framingHandlesPartialAndAdjacentFrames() throws {
         let first = try SpatialBridgeFrameDecoder.encode(Data("one".utf8))
         let second = try SpatialBridgeFrameDecoder.encode(Data("two".utf8))

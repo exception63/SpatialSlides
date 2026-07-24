@@ -36,8 +36,17 @@ struct StageView: View {
                 if coordinator.isSpectatorAlignmentMarker(event.entity) { return }
                 if coordinator.beginCarouselAdjustment(event.entity) { return }
                 if coordinator.beginDeckManipulation(event.entity) { return }
-                guard let (node, _) = coordinator.resolve(event.entity) else { return }
+                guard let (node, id) = coordinator.resolve(event.entity) else { return }
                 coordinator.setManipulating(node, true)    // freeze this node's loop while hands hold it
+                if coordinator.beginLiveModelManipulation(node, elementID: id) {
+                    spatialBridge.updateElementTransform(
+                        elementID: id,
+                        stageTransform: node.transform.matrix,
+                        isManipulating: true,
+                        presentation: presentation,
+                        force: true
+                    )
+                }
             }
             coordinator.manipEndSub = content.subscribe(to: ManipulationEvents.WillEnd.self) { event in
                 if let stageFromShared = coordinator.finishSpectatorAlignmentMarkerManipulation(event.entity) {
@@ -57,13 +66,34 @@ struct StageView: View {
                 guard let (node, id) = coordinator.resolve(event.entity) else { return }
                 presentation.setTransform(elementID: id, position: node.position,
                                           orientation: node.orientation, scale: node.scale.x)
-                spatialBridge.publish(presentation)
+                if let live = coordinator.finishLiveModelManipulation(node) {
+                    spatialBridge.updateElementTransform(
+                        elementID: live.id,
+                        stageTransform: live.transform,
+                        isManipulating: false,
+                        presentation: presentation,
+                        force: true
+                    )
+                } else {
+                    spatialBridge.publish(presentation)
+                }
                 presentation.selectedElementID = id
                 coordinator.noteManipulated(node)   // if a model was pinch-scaled, sync the remote slider
                 coordinator.setManipulating(node, false)   // resume its loop from where it was left
             }
             coordinator.onModelRescaled = { id, pos, ori, s in
                 presentation.setTransform(elementID: id, position: pos, orientation: ori, scale: s)
+                let transform = Transform(
+                    scale: [s, s, s],
+                    rotation: ori,
+                    translation: pos
+                )
+                spatialBridge.updateElementTransform(
+                    elementID: id,
+                    stageTransform: transform.matrix,
+                    isManipulating: true,
+                    presentation: presentation
+                )
             }
             coordinator.onActiveModelScale = { s in presentation.syncModelScaleSlider(toScale: s) }
             // Per-frame: drive the lightweight carousel tween and, in adjust mode,
@@ -72,6 +102,14 @@ struct StageView: View {
                 coordinator.tick(deltaTime: event.deltaTime)
                 if let transform = coordinator.liveDeckTransform {
                     spatialBridge.updateDeckTransform(transform, presentation: presentation)
+                }
+                if let live = coordinator.liveModelTransform {
+                    spatialBridge.updateElementTransform(
+                        elementID: live.id,
+                        stageTransform: live.transform,
+                        isManipulating: true,
+                        presentation: presentation
+                    )
                 }
             }
         } update: { _, attachments in
@@ -102,6 +140,17 @@ struct StageView: View {
         .onChange(of: presentation.selectedElementID) { _, id in coordinator.highlightElement(id) }
         .onChange(of: presentation.carouselAdjust) { _, on in coordinator.setCarouselAdjust(on) }
         .onChange(of: presentation.modelScaleAbsNonce) { _, _ in coordinator.setActiveModelScale(presentation.modelScaleAbs) }
+        .onChange(of: presentation.modelScaleCommitNonce) { _, _ in
+            if let active = coordinator.activeModelTransform {
+                spatialBridge.updateElementTransform(
+                    elementID: active.id,
+                    stageTransform: active.transform,
+                    isManipulating: false,
+                    presentation: presentation,
+                    force: true
+                )
+            }
+        }
         .onChange(of: presentation.currentPage) { _, _ in
             pendingPageCommit?.cancel()
             pendingPageCommit = nil
@@ -925,9 +974,41 @@ final class StageCoordinator {
     /// current scale — the remote's slider follows it.
     var onActiveModelScale: ((Float) -> Void)?
     private var modelNodes: Set<ObjectIdentifier> = []
+    private weak var liveManipulatedModel: Entity?
+    private var liveManipulatedModelID: String?
     /// The model the remote slider drives — the last one tapped or manipulated.
     /// Defaults to the page's first model so the slider works before anything is picked.
     private(set) var activeModelID: String?
+
+    var liveModelTransform: (id: String, transform: simd_float4x4)? {
+        guard let node = liveManipulatedModel, let id = liveManipulatedModelID else { return nil }
+        return (id, node.transform.matrix)
+    }
+
+    var activeModelTransform: (id: String, transform: simd_float4x4)? {
+        guard let id = activeModelID,
+              let node = nodeForElement[id],
+              modelNodes.contains(ObjectIdentifier(node))
+        else { return nil }
+        return (id, node.transform.matrix)
+    }
+
+    func beginLiveModelManipulation(_ node: Entity, elementID: String) -> Bool {
+        guard modelNodes.contains(ObjectIdentifier(node)) else { return false }
+        liveManipulatedModel = node
+        liveManipulatedModelID = elementID
+        activeModelID = elementID
+        return true
+    }
+
+    func finishLiveModelManipulation(
+        _ node: Entity
+    ) -> (id: String, transform: simd_float4x4)? {
+        guard liveManipulatedModel === node, let live = liveModelTransform else { return nil }
+        liveManipulatedModel = nil
+        liveManipulatedModelID = nil
+        return live
+    }
 
     /// Walks up from a tapped entity to the owning 3D-model node, if any.
     private func modelNode(for tapped: Entity) -> Entity? {
@@ -1228,6 +1309,8 @@ final class StageCoordinator {
         halfExtentForEntity.removeAll()
         alwaysGrabNodes.removeAll()
         modelNodes.removeAll()
+        liveManipulatedModel = nil
+        liveManipulatedModelID = nil
         activeModelID = nil
         emphasisMap.removeAll()
         selectedNode = nil

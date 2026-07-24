@@ -23,7 +23,11 @@ final class SpatialSlidesARSceneRenderer {
     private var modelTemplates: [URL: Entity] = [:]
     private var modelLoadTasks: [URL: Task<Entity, Error>] = [:]
     private var loopStates: [String: LoopState] = [:]
+    private var manipulatedElementIDs: Set<String> = []
+    private var runtimeTransformedElementIDs: Set<String> = []
+    private var remoteTransformTargets: [String: Transform] = [:]
     private var updateSubscription: (any Cancellable)?
+    private let remoteTransformFollowRate: Float = 28
 
     private struct LoopState {
         let effect: String
@@ -39,7 +43,7 @@ final class SpatialSlidesARSceneRenderer {
         worldAnchor.addChild(alignmentRoot)
         arView.scene.addAnchor(worldAnchor)
         updateSubscription = arView.scene.subscribe(to: SceneEvents.Update.self) { [weak self] event in
-            self?.tickLoops(deltaTime: event.deltaTime)
+            self?.tickScene(deltaTime: event.deltaTime)
         }
     }
 
@@ -51,6 +55,8 @@ final class SpatialSlidesARSceneRenderer {
         assetURL: (String) -> URL?,
         modelAssetURLs: [URL],
         reportRenderIssue: @escaping (String) -> Void,
+        manipulatedElementIDs: Set<String>,
+        runtimeTransformedElementIDs: Set<String>,
         sceneRevision: Int,
         alignmentRevision: Int
     ) {
@@ -77,6 +83,8 @@ final class SpatialSlidesARSceneRenderer {
         }
 
         prewarmModels(at: modelAssetURLs)
+        self.manipulatedElementIDs = manipulatedElementIDs
+        self.runtimeTransformedElementIDs = runtimeTransformedElementIDs
         guard renderedSceneRevision != sceneRevision else { return }
         renderedSceneRevision = sceneRevision
         guard let snapshot else {
@@ -177,8 +185,16 @@ final class SpatialSlidesARSceneRenderer {
             }
 
             elementSnapshots[element.id] = element
-            entity.transform.matrix = element.transform.matrix
-            applyCurrentLoopPose(to: entity, id: element.id)
+            let target = Self.realityTransform(element.transform)
+            if manipulatedElementIDs.contains(element.id), !shouldRebuild {
+                remoteTransformTargets[element.id] = target
+            } else {
+                remoteTransformTargets.removeValue(forKey: element.id)
+                entity.transform = target
+            }
+            if !runtimeTransformedElementIDs.contains(element.id) {
+                applyCurrentLoopPose(to: entity, id: element.id)
+            }
         }
     }
 
@@ -199,6 +215,7 @@ final class SpatialSlidesARSceneRenderer {
         elementSnapshots.removeValue(forKey: id)
         elementAssetURLs.removeValue(forKey: id)
         loopStates.removeValue(forKey: id)
+        remoteTransformTargets.removeValue(forKey: id)
     }
 
     private func installAlignmentFixture() {
@@ -336,12 +353,49 @@ final class SpatialSlidesARSceneRenderer {
         }
     }
 
+    private func tickScene(deltaTime: TimeInterval) {
+        tickRemoteTransforms(deltaTime: deltaTime)
+        tickLoops(deltaTime: deltaTime)
+    }
+
+    private func tickRemoteTransforms(deltaTime: TimeInterval) {
+        guard deltaTime > 0, !remoteTransformTargets.isEmpty else { return }
+        let clampedDelta = Float(min(deltaTime, 1.0 / 15.0))
+        let amount = 1 - exp(-remoteTransformFollowRate * clampedDelta)
+
+        for id in Array(remoteTransformTargets.keys) {
+            guard manipulatedElementIDs.contains(id),
+                  let target = remoteTransformTargets[id],
+                  let entity = elementEntities[id],
+                  entity.isEnabled
+            else {
+                remoteTransformTargets.removeValue(forKey: id)
+                continue
+            }
+
+            var current = entity.transform
+            current.translation = simd_mix(
+                current.translation,
+                target.translation,
+                SIMD3<Float>(repeating: amount)
+            )
+            current.scale = simd_mix(
+                current.scale,
+                target.scale,
+                SIMD3<Float>(repeating: amount)
+            )
+            current.rotation = simd_slerp(current.rotation, target.rotation, amount)
+            entity.transform = current
+        }
+    }
+
     private func tickLoops(deltaTime: TimeInterval) {
         guard deltaTime > 0 else { return }
         for id in Array(loopStates.keys) {
             guard var loop = loopStates[id],
                   let entity = elementEntities[id],
-                  entity.isEnabled else { continue }
+                  entity.isEnabled,
+                  !manipulatedElementIDs.contains(id) else { continue }
             let previousPhase = loop.phase
             loop.phase += deltaTime
             loopStates[id] = loop
@@ -365,6 +419,14 @@ final class SpatialSlidesARSceneRenderer {
                 break
             }
         }
+    }
+
+    private static func realityTransform(_ transform: BridgeTransform) -> Transform {
+        Transform(
+            scale: transform.scale.simd,
+            rotation: transform.rotation.simd,
+            translation: transform.translation.simd
+        )
     }
 
     private func makePanel(_ element: BridgeElementSnapshot) -> Entity {

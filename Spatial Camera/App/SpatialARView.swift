@@ -41,6 +41,8 @@ struct SpatialARView: UIViewRepresentable {
             assetURL: model.assetURL(for:),
             modelAssetURLs: model.availableModelAssetURLs,
             reportRenderIssue: model.reportRenderIssue(_:),
+            manipulatedElementIDs: model.manipulatedElementIDs,
+            runtimeTransformedElementIDs: model.runtimeTransformedElementIDs,
             sceneRevision: model.sceneRevision,
             alignmentRevision: model.alignmentRevision
         )
@@ -69,6 +71,8 @@ struct SpatialARView: UIViewRepresentable {
             assetURL: (String) -> URL?,
             modelAssetURLs: [URL],
             reportRenderIssue: @escaping (String) -> Void,
+            manipulatedElementIDs: Set<String>,
+            runtimeTransformedElementIDs: Set<String>,
             sceneRevision: Int,
             alignmentRevision: Int
         ) {
@@ -80,6 +84,8 @@ struct SpatialARView: UIViewRepresentable {
                 assetURL: assetURL,
                 modelAssetURLs: modelAssetURLs,
                 reportRenderIssue: reportRenderIssue,
+                manipulatedElementIDs: manipulatedElementIDs,
+                runtimeTransformedElementIDs: runtimeTransformedElementIDs,
                 sceneRevision: sceneRevision,
                 alignmentRevision: alignmentRevision
             )

@@ -101,6 +101,14 @@ phoneWorldContent = phoneWorldFromShared * sharedContent
   松手时强制发送最终状态；iPhone 增量更新已有面板，不重建页面或 USDZ。
   iPhone AR 会话优先开启 `personSegmentationWithDepth`，不支持时降级到
   `personSegmentation`，让真实人物在第三视角与 Slides 重叠时正确遮挡虚拟内容。
+- 2026-07-23 P3.3：协议升级到 v4，新增 `elementTransform` 轻量消息。Vision Pro
+  抓取 USDZ 后以 20 Hz 同步模型的位移、旋转、缩放和操作状态，松手或结束
+  遥控器滑块操作时强制发送最终矩阵。iPhone 直接修改已加载 Entity，操作期间
+  暂停该模型的本地循环位姿，既显示完整操作过程，也不重复加载 USDZ。Spatial
+  Camera 同时加入正式的 1024×1024 iOS AppIcon。
+- 2026-07-23 P3.4：USDZ 操作流提升到 30 Hz，iPhone 将网络位姿作为目标值，
+  在 RealityKit 每帧更新中分别平滑插值位置、旋转和缩放；结束包仍立即精确
+  落点。减少局域网到包抖动带来的阶梯感，不增加模型解析或场景重建。
 
 ## 已知边界
 
@@ -112,6 +120,8 @@ phoneWorldContent = phoneWorldFromShared * sharedContent
   `Data` 编码；尚未做原生二进制帧和跨启动断点续传。
 - Vision 端主 Slides 面板的运行时移动、旋转和缩放已实时同步；轮盘、讲稿板
   和参考板仍是演讲者私有操作界面，不属于 iPhone 观众场景。
+- USDZ 的抓取、移动、旋转、双手缩放和遥控器无级缩放已实时同步；柱状图、
+  散点图等其他可抓取元素目前仍只在手势结束后同步最终状态。
 - 人物遮挡依赖 ARKit 的人物分割能力，头发、手指边缘、快速运动和弱光下可能
   出现短暂边缘误差。当前只解决真人遮挡，家具等普通实物尚未启用网格遮挡。
 - ScreenCaptureKit 是 iOS 27 的主录制路径，ReplayKit 只作为旧系统或启动
@@ -134,6 +144,7 @@ phoneWorldContent = phoneWorldFromShared * sharedContent
 
 - 复用 Spatial Slides 的元素材质和布局规则，而不是 iPhone 端近似重绘。
 - [x] 同步运行时 deck 主屏变换。
+- [x] 实时同步 USDZ 操作过程。
 - [x] iPhone 端人物深度遮挡。
 - 同步需要进入观众场景的其他运行时 entity 变换。
 - 为可复现的 HTML build 动画定义语义动画事件。

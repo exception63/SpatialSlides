@@ -184,6 +184,28 @@ public struct BridgeDeckTransformUpdate: Codable, Equatable, Sendable {
     }
 }
 
+public struct BridgeElementTransformUpdate: Codable, Equatable, Sendable {
+    public var showID: String
+    public var page: Int
+    public var elementID: String
+    public var transform: BridgeTransform
+    public var isManipulating: Bool
+
+    public init(
+        showID: String,
+        page: Int,
+        elementID: String,
+        transform: BridgeTransform,
+        isManipulating: Bool
+    ) {
+        self.showID = showID
+        self.page = page
+        self.elementID = elementID
+        self.transform = transform
+        self.isManipulating = isManipulating
+    }
+}
+
 public struct BridgeAssetData: Codable, Equatable, Sendable {
     public var path: String
     public var contentHash: String
@@ -217,6 +239,7 @@ public enum SpatialBridgePayload: Codable, Equatable, Sendable {
     case manifest(BridgeDeckManifest)
     case slidesSnapshot(BridgeSlidesSnapshot)
     case deckTransform(BridgeDeckTransformUpdate)
+    case elementTransform(BridgeElementTransformUpdate)
     case requestSnapshot
     case requestAsset(String)
     case asset(BridgeAssetData)
@@ -228,6 +251,7 @@ public enum SpatialBridgePayload: Codable, Equatable, Sendable {
         case manifest
         case snapshot
         case deckTransform
+        case elementTransform
         case path
         case asset
         case chunk
@@ -238,6 +262,7 @@ public enum SpatialBridgePayload: Codable, Equatable, Sendable {
         case manifest
         case slidesSnapshot
         case deckTransform
+        case elementTransform
         case requestSnapshot
         case requestAsset
         case asset
@@ -256,6 +281,10 @@ public enum SpatialBridgePayload: Codable, Equatable, Sendable {
         case .deckTransform:
             self = .deckTransform(
                 try container.decode(BridgeDeckTransformUpdate.self, forKey: .deckTransform)
+            )
+        case .elementTransform:
+            self = .elementTransform(
+                try container.decode(BridgeElementTransformUpdate.self, forKey: .elementTransform)
             )
         case .requestSnapshot:
             self = .requestSnapshot
@@ -283,6 +312,9 @@ public enum SpatialBridgePayload: Codable, Equatable, Sendable {
         case .deckTransform(let update):
             try container.encode(PayloadType.deckTransform, forKey: .type)
             try container.encode(update, forKey: .deckTransform)
+        case .elementTransform(let update):
+            try container.encode(PayloadType.elementTransform, forKey: .type)
+            try container.encode(update, forKey: .elementTransform)
         case .requestSnapshot:
             try container.encode(PayloadType.requestSnapshot, forKey: .type)
         case .requestAsset(let path):
@@ -299,7 +331,7 @@ public enum SpatialBridgePayload: Codable, Equatable, Sendable {
 }
 
 public struct SpatialBridgeEnvelope: Codable, Equatable, Sendable {
-    public static let currentProtocolVersion = 3
+    public static let currentProtocolVersion = 4
 
     public var protocolVersion: Int
     public var sequence: UInt64

@@ -44,11 +44,13 @@ final class PresentationModel {
     var modelScaleSlider: Double = 0.5
     private(set) var modelScaleAbs: Float = 0.15
     private(set) var modelScaleAbsNonce = 0
+    private(set) var modelScaleCommitNonce = 0
     /// Called from the slider while the user is dragging it → drive the active model.
     func applyModelScaleSlider() {
         modelScaleAbs = Self.scale(fromSlider: modelScaleSlider)
         modelScaleAbsNonce += 1
     }
+    func finishModelScaleAdjustment() { modelScaleCommitNonce += 1 }
     /// Called by the stage when the active model changes → move the slider to match
     /// (the remote's `onChange` ignores this because the user isn't dragging).
     func syncModelScaleSlider(toScale s: Float) { modelScaleSlider = Self.slider(fromScale: s) }

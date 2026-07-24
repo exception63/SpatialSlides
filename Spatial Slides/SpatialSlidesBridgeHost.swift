@@ -22,6 +22,10 @@ final class SpatialSlidesBridgeHost: @unchecked Sendable {
     private var lastSentDeckTransformInStage: simd_float4x4?
     private var lastDeckTransformSentAt: TimeInterval = 0
     private let deckTransformSendInterval: TimeInterval = 1.0 / 20.0
+    private var lastSentElementTransformsInStage: [String: simd_float4x4] = [:]
+    private var lastSentElementManipulation: [String: Bool] = [:]
+    private var lastElementTransformSentAt: [String: TimeInterval] = [:]
+    private let elementTransformSendInterval: TimeInterval = 1.0 / 30.0
     private var stageFromShared = simd_float4x4(
         SIMD4<Float>(1, 0, 0, 0),
         SIMD4<Float>(0, 1, 0, 0),
@@ -129,6 +133,52 @@ final class SpatialSlidesBridgeHost: @unchecked Sendable {
         send(.deckTransform(update))
     }
 
+    func updateElementTransform(
+        elementID: String,
+        stageTransform: simd_float4x4,
+        isManipulating: Bool,
+        presentation: PresentationModel,
+        force: Bool = false
+    ) {
+        guard presentation.hasContent,
+              presentation.currentElements.contains(where: { $0.id == elementID })
+        else { return }
+
+        let currentShowID = showID(presentation.show)
+        let update = BridgeElementTransformUpdate(
+            showID: currentShowID,
+            page: presentation.currentPage,
+            elementID: elementID,
+            transform: BridgeTransform(matrix: simd_inverse(stageFromShared) * stageTransform),
+            isManipulating: isManipulating
+        )
+
+        if var snapshot = latestSnapshot,
+           snapshot.showID == currentShowID,
+           snapshot.page == presentation.currentPage,
+           let index = snapshot.elements.firstIndex(where: { $0.id == elementID }) {
+            snapshot.elements[index].transform = update.transform
+            latestSnapshot = snapshot
+        }
+
+        let key = "\(currentShowID)|\(presentation.currentPage)|\(elementID)"
+        let transformChanged = lastSentElementTransformsInStage[key].map {
+            !matricesApproximatelyEqual($0, stageTransform)
+        } ?? true
+        let manipulationChanged = lastSentElementManipulation[key] != isManipulating
+        guard hasViewer, transformChanged || manipulationChanged else { return }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        guard force
+                || now - (lastElementTransformSentAt[key] ?? 0) >= elementTransformSendInterval
+        else { return }
+
+        lastSentElementTransformsInStage[key] = stageTransform
+        lastSentElementManipulation[key] = isManipulating
+        lastElementTransformSentAt[key] = now
+        send(.elementTransform(update))
+    }
+
     private func receive(_ envelope: SpatialBridgeEnvelope) {
         guard envelope.protocolVersion == SpatialBridgeEnvelope.currentProtocolVersion else { return }
         switch envelope.payload {
@@ -140,7 +190,7 @@ final class SpatialSlidesBridgeHost: @unchecked Sendable {
             if let latestSnapshot { send(.slidesSnapshot(latestSnapshot)) }
         case .requestAsset(let path):
             sendAsset(path)
-        case .manifest, .slidesSnapshot, .deckTransform, .asset, .assetChunk:
+        case .manifest, .slidesSnapshot, .deckTransform, .elementTransform, .asset, .assetChunk:
             break
         }
     }

@@ -11,6 +11,8 @@ final class SpatialCameraModel: @unchecked Sendable {
     private(set) var manifest: BridgeDeckManifest?
     private(set) var snapshot: BridgeSlidesSnapshot?
     private(set) var sceneRevision = 0
+    private(set) var manipulatedElementIDs: Set<String> = []
+    private(set) var runtimeTransformedElementIDs: Set<String> = []
     private(set) var alignmentRevision = 0
     private(set) var alignmentFrame: SharedAlignmentFrame?
     private(set) var calibrationOrigin: SIMD3<Float>?
@@ -169,6 +171,8 @@ final class SpatialCameraModel: @unchecked Sendable {
             assetProgress.removeAll()
             assetRequestQueue.removeAll()
             activeAssetRequests.removeAll()
+            manipulatedElementIDs.removeAll()
+            runtimeTransformedElementIDs.removeAll()
         }
     }
 
@@ -186,6 +190,8 @@ final class SpatialCameraModel: @unchecked Sendable {
                 assetProgress.removeAll()
                 assetRequestQueue.removeAll()
                 activeAssetRequests.removeAll()
+                manipulatedElementIDs.removeAll()
+                runtimeTransformedElementIDs.removeAll()
             }
             self.manifest = manifest
             restoreCachedAssets(from: manifest)
@@ -203,8 +209,14 @@ final class SpatialCameraModel: @unchecked Sendable {
                 enqueueAssets(modelPrefetchPaths, priority: false)
             }
         case .slidesSnapshot(let snapshot):
+            let interactionStateChanged = !manipulatedElementIDs.isEmpty
+                || !runtimeTransformedElementIDs.isEmpty
+            manipulatedElementIDs.removeAll()
+            runtimeTransformedElementIDs.removeAll()
             if self.snapshot != snapshot {
                 self.snapshot = snapshot
+                sceneRevision += 1
+            } else if interactionStateChanged {
                 sceneRevision += 1
             }
             requestMissingAssets(for: snapshot)
@@ -216,6 +228,29 @@ final class SpatialCameraModel: @unchecked Sendable {
                 self.snapshot = snapshot
                 sceneRevision += 1
             }
+        case .elementTransform(let update):
+            guard var snapshot = self.snapshot,
+                  snapshot.showID == update.showID,
+                  snapshot.page == update.page,
+                  let index = snapshot.elements.firstIndex(where: { $0.id == update.elementID })
+            else { break }
+
+            var changed = false
+            if snapshot.elements[index].transform != update.transform {
+                snapshot.elements[index].transform = update.transform
+                self.snapshot = snapshot
+                changed = true
+            }
+
+            let wasManipulating = manipulatedElementIDs.contains(update.elementID)
+            if update.isManipulating {
+                manipulatedElementIDs.insert(update.elementID)
+            } else {
+                manipulatedElementIDs.remove(update.elementID)
+            }
+            if wasManipulating != update.isManipulating { changed = true }
+            if runtimeTransformedElementIDs.insert(update.elementID).inserted { changed = true }
+            if changed { sceneRevision += 1 }
         case .asset(let asset):
             store(asset)
         case .assetChunk(let chunk):

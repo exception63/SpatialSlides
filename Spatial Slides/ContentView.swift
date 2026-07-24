@@ -201,7 +201,10 @@ struct ContentView: View {
                         Image(systemName: "minus.magnifyingglass").font(.caption).foregroundStyle(.tertiary)
                         Slider(value: Binding(get: { presentation.modelScaleSlider },
                                               set: { presentation.modelScaleSlider = $0 }),
-                               in: 0...1) { editing in isDraggingModelScale = editing }
+                               in: 0...1) { editing in
+                            isDraggingModelScale = editing
+                            if !editing { presentation.finishModelScaleAdjustment() }
+                        }
                         Image(systemName: "plus.magnifyingglass").font(.caption).foregroundStyle(.tertiary)
                     }
                     Text(presentation.currentModelCount > 1
